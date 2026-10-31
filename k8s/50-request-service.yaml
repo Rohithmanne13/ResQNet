@@ -1,0 +1,31 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: request-service, namespace: erms, labels: { app: request-service } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: request-service } }
+  template:
+    metadata: { labels: { app: request-service } }
+    spec:
+      containers:
+        - name: request-service
+          image: erms/request-service:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
+            - { name: RABBITMQ_URL, value: "amqp://guest:guest@rabbitmq:5672/" }
+            - { name: MATCHING_SERVICE_URL, value: "http://matching-service:8000" }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: request-service, namespace: erms }
+spec:
+  type: NodePort
+  selector: { app: request-service }
+  ports: [{ port: 8000, targetPort: 8000, nodePort: 30080 }]

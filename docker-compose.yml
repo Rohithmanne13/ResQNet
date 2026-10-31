@@ -1,0 +1,98 @@
+# Local deployment: 1 coordinator, 3 shards x 2 replicas, RabbitMQ, request + matching services.
+#   docker compose up -d --build
+#   API:            http://localhost:8080/docs
+#   Coordinator:    http://localhost:8001/cluster
+#   RabbitMQ UI:    http://localhost:15672  (guest/guest)
+
+x-storage-node: &storage-node
+  image: erms/storage-node:latest
+  build: { context: ., dockerfile: storage_node/Dockerfile }
+  depends_on: [coordinator]
+  restart: unless-stopped
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    environment:
+      # refresh management-API queue stats every 1s (default 5s) so queue depth is visible in demos
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit collect_statistics_interval 1000"
+    ports: ["5672:5672", "15672:15672"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  coordinator:
+    image: erms/coordinator:latest
+    build: { context: ., dockerfile: coordinator/Dockerfile }
+    environment:
+      HEARTBEAT_TIMEOUT: "6"
+    ports: ["8001:8000"]
+    restart: unless-stopped
+
+  storage-0a:
+    <<: *storage-node
+    environment: { NODE_ID: storage-0a, SHARD_ID: "0", NODE_URL: "http://storage-0a:8000", COORDINATOR_URL: "http://coordinator:8000" }
+    volumes: ["storage-0a:/data"]
+  storage-0b:
+    <<: *storage-node
+    environment: { NODE_ID: storage-0b, SHARD_ID: "0", NODE_URL: "http://storage-0b:8000", COORDINATOR_URL: "http://coordinator:8000" }
+    volumes: ["storage-0b:/data"]
+  storage-1a:
+    <<: *storage-node
+    environment: { NODE_ID: storage-1a, SHARD_ID: "1", NODE_URL: "http://storage-1a:8000", COORDINATOR_URL: "http://coordinator:8000" }
+    volumes: ["storage-1a:/data"]
+  storage-1b:
+    <<: *storage-node
+    environment: { NODE_ID: storage-1b, SHARD_ID: "1", NODE_URL: "http://storage-1b:8000", COORDINATOR_URL: "http://coordinator:8000" }
+    volumes: ["storage-1b:/data"]
+  storage-2a:
+    <<: *storage-node
+    environment: { NODE_ID: storage-2a, SHARD_ID: "2", NODE_URL: "http://storage-2a:8000", COORDINATOR_URL: "http://coordinator:8000" }
+    volumes: ["storage-2a:/data"]
+  storage-2b:
+    <<: *storage-node
+    environment: { NODE_ID: storage-2b, SHARD_ID: "2", NODE_URL: "http://storage-2b:8000", COORDINATOR_URL: "http://coordinator:8000" }
+    volumes: ["storage-2b:/data"]
+
+  request-service:
+    image: erms/request-service:latest
+    build: { context: ., dockerfile: request_service/Dockerfile }
+    environment:
+      COORDINATOR_URL: http://coordinator:8000
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      MATCHING_SERVICE_URL: http://matching-service:8000
+    ports: ["8080:8000"]
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      coordinator: { condition: service_started }
+    restart: unless-stopped
+
+  matching-service:
+    image: erms/matching-service:latest
+    build: { context: ., dockerfile: matching_service/Dockerfile }
+    environment:
+      COORDINATOR_URL: http://coordinator:8000
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      PREFETCH: "2"
+      RETRY_DELAY_MS: "5000"
+      MAX_MATCH_ATTEMPTS: "12"
+      MAX_MATCH_DISTANCE_KM: "50"
+      MATCH_DELAY_MS: "1500"
+      STALE_PENDING_SECONDS: "30"
+      SWEEP_INTERVAL: "10"
+    deploy:
+      replicas: 2
+    depends_on:
+      rabbitmq: { condition: service_healthy }
+      coordinator: { condition: service_started }
+    restart: unless-stopped
+
+volumes:
+  storage-0a: {}
+  storage-0b: {}
+  storage-1a: {}
+  storage-1b: {}
+  storage-2a: {}
+  storage-2b: {}

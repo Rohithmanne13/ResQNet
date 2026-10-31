@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: matching-service, namespace: erms, labels: { app: matching-service } }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: matching-service } }
+  template:
+    metadata: { labels: { app: matching-service } }
+    spec:
+      containers:
+        - name: matching-service
+          image: erms/matching-service:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
+            - { name: RABBITMQ_URL, value: "amqp://guest:guest@rabbitmq:5672/" }
+            - { name: PREFETCH, value: "2" }
+            - { name: RETRY_DELAY_MS, value: "5000" }
+            - { name: MAX_MATCH_ATTEMPTS, value: "12" }
+            - { name: MAX_MATCH_DISTANCE_KM, value: "50" }
+            - { name: MATCH_DELAY_MS, value: "1500" }
+            - { name: STALE_PENDING_SECONDS, value: "30" }
+            - { name: SWEEP_INTERVAL, value: "10" }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata: { name: matching-service, namespace: erms }
+spec:
+  selector: { app: matching-service }
+  ports: [{ port: 8000, targetPort: 8000 }]

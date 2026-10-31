@@ -1,0 +1,119 @@
+apiVersion: v1
+kind: Service
+metadata: { name: storage-shard-0, namespace: erms }
+spec:
+  clusterIP: None   # headless: stable per-pod DNS for the StatefulSet
+  selector: { app: storage-node, shard: "0" }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: storage-shard-0, namespace: erms, labels: { app: storage-node, shard: "0" } }
+spec:
+  serviceName: storage-shard-0
+  replicas: 2       # primary copy + 1 replica of shard 0
+  podManagementPolicy: Parallel
+  selector: { matchLabels: { app: storage-node, shard: "0" } }
+  template:
+    metadata: { labels: { app: storage-node, shard: "0" } }
+    spec:
+      containers:
+        - name: storage-node
+          image: erms/storage-node:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: SHARD_ID, value: "0" }
+            - { name: NODE_ID, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_URL, value: "http://$(POD_IP):8000" }
+            - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
+            - { name: DATA_DIR, value: /data }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          volumeMounts: [{ name: data, mountPath: /data }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+      # emptyDir survives container restarts but not pod deletion: a deleted pod
+      # comes back empty and rebuilds itself from its peer replica (resync).
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: storage-shard-1, namespace: erms }
+spec:
+  clusterIP: None   # headless: stable per-pod DNS for the StatefulSet
+  selector: { app: storage-node, shard: "1" }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: storage-shard-1, namespace: erms, labels: { app: storage-node, shard: "1" } }
+spec:
+  serviceName: storage-shard-1
+  replicas: 2       # primary copy + 1 replica of shard 1
+  podManagementPolicy: Parallel
+  selector: { matchLabels: { app: storage-node, shard: "1" } }
+  template:
+    metadata: { labels: { app: storage-node, shard: "1" } }
+    spec:
+      containers:
+        - name: storage-node
+          image: erms/storage-node:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: SHARD_ID, value: "1" }
+            - { name: NODE_ID, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_URL, value: "http://$(POD_IP):8000" }
+            - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
+            - { name: DATA_DIR, value: /data }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          volumeMounts: [{ name: data, mountPath: /data }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+      # emptyDir survives container restarts but not pod deletion: a deleted pod
+      # comes back empty and rebuilds itself from its peer replica (resync).
+      volumes: [{ name: data, emptyDir: {} }]
+---
+apiVersion: v1
+kind: Service
+metadata: { name: storage-shard-2, namespace: erms }
+spec:
+  clusterIP: None   # headless: stable per-pod DNS for the StatefulSet
+  selector: { app: storage-node, shard: "2" }
+  ports: [{ port: 8000, targetPort: 8000 }]
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: { name: storage-shard-2, namespace: erms, labels: { app: storage-node, shard: "2" } }
+spec:
+  serviceName: storage-shard-2
+  replicas: 2       # primary copy + 1 replica of shard 2
+  podManagementPolicy: Parallel
+  selector: { matchLabels: { app: storage-node, shard: "2" } }
+  template:
+    metadata: { labels: { app: storage-node, shard: "2" } }
+    spec:
+      containers:
+        - name: storage-node
+          image: erms/storage-node:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: SHARD_ID, value: "2" }
+            - { name: NODE_ID, valueFrom: { fieldRef: { fieldPath: metadata.name } } }
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_URL, value: "http://$(POD_IP):8000" }
+            - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
+            - { name: DATA_DIR, value: /data }
+          ports: [{ containerPort: 8000 }]
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          volumeMounts: [{ name: data, mountPath: /data }]
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+      # emptyDir survives container restarts but not pod deletion: a deleted pod
+      # comes back empty and rebuilds itself from its peer replica (resync).
+      volumes: [{ name: data, emptyDir: {} }]
