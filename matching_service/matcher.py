@@ -11,7 +11,7 @@ import os
 import socket
 
 from common.geo import haversine_km
-from common.models import MATCHABLE_REQUEST_STATUSES, now_iso, request_key
+from common.models import MATCHABLE_REQUEST_STATUSES, now_iso, request_key, resource_prefix
 from common.resources import release, try_assign
 from common.storage_client import Conflict, NotFound, StorageClient
 
@@ -48,10 +48,20 @@ async def match_request(store: StorageClient, request_id: str, source: str) -> d
             return {"result": "skipped", "request_id": request_id, "status": req["status"],
                     "assigned_resource": req.get("assigned_resource")}
 
-        listing = await store.list("resource:")
-        candidates = rank_candidates(req, [i["value"] for i in listing["items"]])
+        # Only resources of the requested type: resource keys are partitioned by type, so this is an
+        # indexed range scan on each shard rather than a scan of every resource in the system.
+        listing = await store.list(resource_prefix(req["type"]))
+        resources = [i["value"] for i in listing["items"]]
         chosen = None
-        for res, dist in candidates:
+        # A unit this request already holds (a crash/redelivery after claiming, before marking the
+        # request matched) is reused instead of claiming a second one.
+        for res in resources:
+            if request_id in res.get("assigned_requests", []):
+                loc, rloc = req["location"], res["location"]
+                chosen = (res, round(haversine_km(loc["lat"], loc["lon"], rloc["lat"], rloc["lon"]), 3))
+                break
+        candidates = rank_candidates(req, resources)
+        for res, dist in ([] if chosen else candidates):
             if await try_assign(store, res["id"], request_id, req["type"]):
                 chosen = (res, dist)
                 break

@@ -18,6 +18,8 @@ async def try_assign(store: StorageClient, resource_id: str, request_id: str, re
         except NotFound:
             return False
         res = item["value"]
+        if request_id in res.get("assigned_requests", []):
+            return True   # already holds a unit (e.g. redelivered message after a crash): never take two
         if res.get("status") != "available" or res.get("availability", 0) <= 0 or res.get("type") != req_type:
             return False
         res["availability"] -= 1

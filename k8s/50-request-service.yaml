@@ -13,7 +13,11 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
-            - { name: RABBITMQ_URL, value: "amqp://guest:guest@rabbitmq:5672/" }
+            - name: RABBITMQ_USER
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: username } }
+            - name: RABBITMQ_PASSWORD
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: password } }
+            - { name: RABBITMQ_URL, value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/" }
             - { name: MATCHING_SERVICE_URL, value: "http://matching-service:8000" }
           ports: [{ containerPort: 8000 }]
           readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }

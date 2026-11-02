@@ -3,6 +3,7 @@
 #   docker compose up -d --build && ./scripts/demo.sh        (AUTO=1 for no pauses)
 set -euo pipefail
 cd "$(dirname "$0")/.."
+[ -f .env ] || ./scripts/init-env.sh
 source scripts/lib.sh
 STOP=${STOP:-"docker compose stop"}
 START=${START:-"docker compose start"}

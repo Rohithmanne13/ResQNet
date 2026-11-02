@@ -4,11 +4,12 @@
   .venv/bin/python -m pytest -v tests/integration
 
 Env: API_URL (default http://localhost:8080), COORD_URL (default http://localhost:8001),
+RABBIT_URL (management API, default http://localhost:15672), RABBIT_USER / RABBIT_PASS (default: .env),
 STOP_CMD / START_CMD: shell templates to stop/start a storage node; {node} = node id,
 {statefulset} = node id without its ordinal. FAIL_REPLICA = first|last (which replica to kill).
-Kubernetes (scaling a StatefulSet down removes its last pod):
-  FAIL_REPLICA=last STOP_CMD="kubectl -n erms scale sts {statefulset} --replicas=1" \
-  START_CMD="kubectl -n erms scale sts {statefulset} --replicas=2" pytest -v tests/integration
+BROKER_STOP_CMD / BROKER_START_CMD / BROKER_RESTART_CMD, MATCHING_STOP_CMD / MATCHING_START_CMD,
+COORD_RESTART_CMD: how to stop/start/restart those services.
+Kubernetes: see README ("Against Kubernetes") for the full set of commands.
 Tests run in file order.
 """
 import concurrent.futures
@@ -25,9 +26,24 @@ COORD = os.getenv("COORD_URL", "http://localhost:8001")
 STOP_CMD = os.getenv("STOP_CMD", "docker compose stop {node}")
 START_CMD = os.getenv("START_CMD", "docker compose start {node}")
 FAIL_REPLICA = os.getenv("FAIL_REPLICA", "first")
+RABBIT = os.getenv("RABBIT_URL", "http://localhost:15672")
+
+
+def _dotenv(name: str) -> str | None:
+    path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
+    if os.path.exists(path):
+        for line in open(path):
+            if line.startswith(f"{name}="):
+                return line.strip().split("=", 1)[1]
+    return None
+
+
+RABBIT_AUTH = (os.getenv("RABBIT_USER") or _dotenv("RABBITMQ_USER") or "erms",
+               os.getenv("RABBIT_PASS") or _dotenv("RABBITMQ_PASSWORD") or "")
 
 api = httpx.Client(base_url=API, timeout=20)
 coord = httpx.Client(base_url=COORD, timeout=20)
+rabbit = httpx.Client(base_url=RABBIT, timeout=10, auth=RABBIT_AUTH)
 
 # Unique location per test run so leftover resources from previous runs never interfere.
 RUN = uuid.uuid4().hex[:6]
@@ -43,9 +59,13 @@ def wait_for(fn, timeout=30, interval=0.5, desc="condition"):
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
-        last = fn()
-        if last:
-            return last
+        try:
+            last = fn()
+        except httpx.HTTPError as e:   # e.g. the coordinator is restarting
+            last = repr(e)
+        else:
+            if last:
+                return last
         time.sleep(interval)
     raise AssertionError(f"timed out waiting for {desc}; last={last!r}")
 
@@ -65,11 +85,36 @@ def create_request(type_="water", auto_match=True, **kw):
     return r.json()
 
 
+def coord_value(key):
+    return coord.get(f"/internal/data/{key}").json()["value"]
+
+
+def coord_write(key, value):
+    """Write a record directly through the coordinator (bypassing the services) to simulate a crash
+    between the two writes of an operation."""
+    r = coord.put(f"/internal/data/{key}", json={"value": value})
+    assert r.status_code == 200, r.text
+
+
+def cluster_all_ready():
+    shards = coord.get("/cluster").json()["shards"].values()
+    return all(len(s["nodes"]) >= 2 and all(n["status"] == "ready" for n in s["nodes"]) for s in shards)
+
+
 def register(type_="water", availability=1, name=None, **kw):
     r = api.post("/resources", json={"type": type_, "location": loc(**kw), "availability": availability,
                                      "name": name or f"{type_}-{RUN}", "kind": "volunteer"})
     assert r.status_code == 201, r.text
     return r.json()
+
+
+@pytest.fixture(scope="module", autouse=True)
+def system_ready():
+    """Right after `docker compose up` / a deploy, RabbitMQ needs ~10-20 s before the services connect:
+    wait until the storage layer is healthy and the request service is connected to the broker."""
+    wait_for(lambda: coord.get("/health").json()["status"] == "ok", timeout=180, interval=1, desc="storage healthy")
+    wait_for(lambda: api.get("/health").json().get("broker_connected"), timeout=180, interval=1,
+             desc="request service connected to RabbitMQ")
 
 
 # ----------------------------------------------------------------------------- normal operation
@@ -89,7 +134,9 @@ def test_create_and_get_request():
     body = got.json()
     assert body["type"] == "water" and body["details"] == f"test {RUN}" and "created_at" in body
     assert body["_storage"]["shard"] == req["_storage"]["shard"]
-    assert len(req["_storage"]["replicas"]) == 2
+    assert len(req["_storage"]["replicas"]) == 2 and req["_storage"]["degraded"] is False
+    # ids pasted with surrounding spaces still resolve
+    assert api.get(f"/requests/%20{req['id']}%20").json()["id"] == req["id"]
 
 
 def test_validation_and_not_found():
@@ -104,11 +151,59 @@ def test_validation_and_not_found():
 def test_register_and_list_resources():
     res = register("food", availability=3, dlat=5)
     assert res["status"] == "available" and res["availability"] == 3
+    assert res["id"].startswith("res-food-")        # type-partitioned key: matching scans one type only
+    assert api.get("/resources", params={"type": "spaceships"}).status_code == 422
     listed = api.get("/resources", params={"type": "food"}).json()
     assert res["id"] in [r["id"] for r in listed["items"]]
     upd = api.put(f"/resources/{res['id']}/status", json={"status": "offline"})
     assert upd.status_code == 200 and upd.json()["status"] == "offline"
     assert api.get(f"/resources/{res['id']}").json()["status"] == "offline"
+
+
+def test_resource_availability_updates():
+    """PUT /resources/{id}/status {"availability": N}: capacity changes drive available <-> busy,
+    are persisted, are respected by matching, and invalid updates are rejected."""
+    res = register("shelter", availability=2, dlat=10)
+    rid = res["id"]
+    assert res["status"] == "available" and res["availability"] == 2
+
+    def update(body):
+        return api.put(f"/resources/{rid}/status", json=body)
+
+    # increase capacity
+    r = update({"availability": 5})
+    assert r.status_code == 200 and r.json()["availability"] == 5 and r.json()["status"] == "available"
+    stored = api.get(f"/resources/{rid}").json()
+    assert stored["availability"] == 5 and stored["status"] == "available"
+
+    # 0 -> busy
+    r = update({"availability": 0})
+    assert r.status_code == 200 and r.json()["availability"] == 0 and r.json()["status"] == "busy"
+    stored = api.get(f"/resources/{rid}").json()
+    assert stored["availability"] == 0 and stored["status"] == "busy"
+
+    # a busy (0-capacity) resource is never matched
+    req = create_request("shelter", auto_match=False, dlat=10)
+    assert api.post(f"/match/{req['id']}").status_code == 409
+
+    # invalid updates are rejected and change nothing
+    assert update({"status": "available"}).status_code == 400          # available with 0 capacity
+    assert update({"availability": -1}).status_code == 422
+    assert update({}).status_code == 400
+    assert api.get(f"/resources/{rid}").json()["status"] == "busy"
+
+    # busy -> available again when capacity comes back, and now it gets matched
+    r = update({"availability": 1})
+    assert r.status_code == 200 and r.json()["status"] == "available" and r.json()["availability"] == 1
+    m = api.post(f"/match/{req['id']}")
+    assert m.status_code == 200 and m.json()["resource_id"] == rid
+    after = api.get(f"/resources/{rid}").json()
+    assert after["availability"] == 0 and after["status"] == "busy" and req["id"] in after["assigned_requests"]
+
+    # an offline resource stays offline when only its capacity changes
+    assert update({"status": "offline"}).status_code == 200
+    r = update({"availability": 3})
+    assert r.status_code == 200 and r.json()["status"] == "offline" and r.json()["availability"] == 3
 
 
 def test_manual_match_picks_nearest_resource():
@@ -199,6 +294,48 @@ def test_data_distributed_across_three_shards():
         assert min(counts) > 0
 
 
+# ----------------------------------------------------------------------------- self-healing (edge cases)
+def test_capacity_leak_is_reconciled():
+    """Crash between 'request resolved' and 'resource released': the unit must not stay locked."""
+    res = register("medicine", availability=1, dlat=11)
+    req = create_request("medicine", auto_match=False, dlat=11)
+    assert api.post(f"/match/{req['id']}").status_code == 200
+    assert api.get(f"/resources/{res['id']}").json()["availability"] == 0
+    key = f"request:{req['id']}"
+    coord_write(key, {**coord_value(key), "status": "resolved"})   # resolved, but release never happened
+
+    def released():
+        r = api.get(f"/resources/{res['id']}").json()
+        return r["availability"] == 1 and r["status"] == "available" and r["assigned_requests"] == [] and r
+    wait_for(released, timeout=90, interval=2, desc="reconciler releases the leaked unit")
+
+
+def test_lost_claim_is_reconciled():
+    """Crash after the request was marked matched but its claim on the resource was lost."""
+    res = register("food", availability=2, dlat=12)
+    req = create_request("food", auto_match=False, dlat=12)
+    assert api.post(f"/match/{req['id']}").status_code == 200
+    rkey = f"resource:food:{res['id']}"
+    coord_write(rkey, {**coord_value(rkey), "assigned_requests": [], "availability": 2, "status": "available"})
+
+    def reclaimed():
+        r = api.get(f"/resources/{res['id']}").json()
+        return r["assigned_requests"] == [req["id"]] and r["availability"] == 1 and r
+    wait_for(reclaimed, timeout=90, interval=2, desc="reconciler re-claims the lost unit")
+    assert api.get(f"/requests/{req['id']}").json()["status"] == "matched"
+
+
+def test_unmatched_request_is_revived_when_a_resource_appears():
+    req = create_request("transportation", auto_match=False, dlat=14)
+    key = f"request:{req['id']}"
+    coord_write(key, {**coord_value(key), "status": "unmatched", "auto_match": True, "match_attempts": 12})
+    assert api.get(f"/requests/{req['id']}").json()["status"] == "unmatched"
+    res = register("transportation", dlat=14)
+    got = wait_for(lambda: (g := api.get(f"/requests/{req['id']}").json())["status"] == "matched" and g,
+                   timeout=60, interval=2, desc="unmatched request revived and matched")
+    assert got["assigned_resource"] == res["id"]
+
+
 # ----------------------------------------------------------------------------- failure handling
 def _shard_of(key):
     return coord.get(f"/internal/shard-of/{key}").json()
@@ -230,7 +367,7 @@ def test_storage_node_failure_and_recovery():
         while len(written_during) < 3:
             r = create_request("food", auto_match=False, dlat=8)
             if r["_storage"]["shard"] == info["shard"]:
-                assert r["_storage"]["replicas"] == [survivor]
+                assert r["_storage"]["replicas"] == [survivor] and r["_storage"]["degraded"] is True
                 written_during.append(r["id"])
     finally:
         subprocess.run(START_CMD.format(**fmt), shell=True, check=True)
@@ -268,3 +405,77 @@ def test_broker_outage_requests_are_not_lost():
     got = wait_for(lambda: (g := api.get(f"/requests/{req['id']}").json())["status"] == "matched" and g,
                    timeout=120, interval=2, desc="match after broker recovery")
     assert got["assigned_resource"] == res["id"]
+
+
+MATCHING_STOP = os.getenv("MATCHING_STOP_CMD", "docker compose stop matching-service")
+MATCHING_START = os.getenv("MATCHING_START_CMD", "docker compose start matching-service")
+BROKER_RESTART = os.getenv("BROKER_RESTART_CMD", "docker compose restart rabbitmq")
+
+
+def _queue():
+    r = rabbit.get("/api/queues/%2F/matching.requests")
+    assert r.status_code != 401, "RabbitMQ management API rejected the login (check RABBIT_USER/RABBIT_PASS)"
+    return r.json() if r.status_code == 200 else {"http_status": r.status_code}   # broker still starting
+
+
+def test_queued_requests_survive_broker_restart_and_match_503_when_matching_down():
+    """Matching service down: requests stay queued and POST /match answers 503. The broker is then
+    restarted: the queued (persistent) messages are still there and get matched once matching is back."""
+    res = register("shelter", availability=3, dlat=13)
+    subprocess.run(MATCHING_STOP, shell=True, check=True)
+    try:
+        wait_for(lambda: _queue().get("consumers") == 0, timeout=60, desc="no consumers")
+        base = _queue().get("messages", 0)
+        reqs = [create_request("shelter", dlat=13) for _ in range(3)]
+        assert all(r["queued"] for r in reqs)
+        wait_for(lambda: _queue().get("messages") == base + 3, timeout=30, desc="3 messages queued")
+        r = api.post(f"/match/{reqs[0]['id']}")
+        assert r.status_code == 503, r.text
+
+        subprocess.run(BROKER_RESTART, shell=True, check=True)
+        wait_for(lambda: _queue().get("messages") == base + 3, timeout=180, interval=2,
+                 desc="queued messages still there after the broker restart")
+    finally:
+        subprocess.run(MATCHING_START, shell=True, check=True)
+    for q in reqs:
+        got = wait_for(lambda: (g := api.get(f"/requests/{q['id']}").json())["status"] == "matched" and g,
+                       timeout=180, interval=2, desc="match after restart")
+        assert got["assigned_resource"] == res["id"]
+    assert api.get(f"/resources/{res['id']}").json()["availability"] == 0
+
+
+COORD_RESTART = os.getenv("COORD_RESTART_CMD", "docker compose restart coordinator")
+
+
+@pytest.mark.skipif("kubectl" in STOP_CMD, reason="needs per-node stop/start (Compose); "
+                                                   "Kubernetes variant: tests/k8s")
+def test_coordinator_restart_never_serves_a_stale_replica():
+    """Replica A misses an update while it is down. Then the coordinator restarts and A comes back FIRST:
+    it must not serve its stale copy; once B is back, A and B merge and A serves the new data."""
+    req = create_request("other", auto_match=False, dlat=15)
+    replicas = _shard_of(f"request:{req['id']}")["replicas"]
+    a, b = replicas[0], replicas[1]                       # a = the replica reads normally go to
+    fmt = lambda n: {"node": n, "statefulset": n.rsplit("-", 1)[0]}  # noqa: E731
+    print(f"\nstale replica {a}, fresh replica {b}")
+
+    subprocess.run(STOP_CMD.format(**fmt(a)), shell=True, check=True)
+    try:
+        wait_for(lambda: node_status(a) == "down", timeout=20, desc=f"{a} down")
+        upd = api.put(f"/requests/{req['id']}/status", json={"status": "cancelled", "note": "while a is down"})
+        assert upd.status_code == 200                     # only b has this update; a still says "pending"
+        subprocess.run(STOP_CMD.format(**fmt(b)), shell=True, check=True)
+        subprocess.run(COORD_RESTART, shell=True, check=True)
+        wait_for(lambda: coord.get("/health").status_code == 200, timeout=60, desc="coordinator back")
+
+        subprocess.run(START_CMD.format(**fmt(a)), shell=True, check=True)
+        wait_for(lambda: node_status(a) == "waiting", timeout=30, interval=0.2, desc=f"{a} waiting")
+        r = api.get(f"/requests/{req['id']}")
+        assert r.status_code == 503, f"stale replica served a read: {r.text}"   # old behaviour: 200 'pending'
+    finally:
+        subprocess.run(START_CMD.format(**fmt(a)), shell=True, check=True)
+        subprocess.run(START_CMD.format(**fmt(b)), shell=True, check=True)
+
+    wait_for(lambda: node_status(a) == "ready" and node_status(b) == "ready", timeout=90, desc="a and b ready")
+    got = api.get(f"/requests/{req['id']}").json()
+    assert got["_storage"]["served_by"] == a and got["status"] == "cancelled"   # a merged b's newer data
+    wait_for(cluster_all_ready, timeout=90, desc="whole cluster ready")

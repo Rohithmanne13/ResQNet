@@ -25,6 +25,8 @@ elif mode == "queue":
 elif mode == "resources":
     for r in d["items"]:
         print(f"  {r['id']}  {r['name']:<26} avail={r['availability']} status={r['status']} shard={r['_shard']}")
+elif mode == "request" and "id" not in d:
+    print(f"  error: {d.get('detail', d)}")
 elif mode == "request":
     a = d.get("assignment") or {}
     print(f"  {d['id']}  {d['status']:<10} {str(a.get('resource_name', '-')):<22} "

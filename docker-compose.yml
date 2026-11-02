@@ -1,8 +1,9 @@
 # Local deployment: 1 coordinator, 3 shards x 2 replicas, RabbitMQ, request + matching services.
+#   ./scripts/init-env.sh          # once: writes .env with a random RabbitMQ password (git-ignored)
 #   docker compose up -d --build
 #   API:            http://localhost:8080/docs
 #   Coordinator:    http://localhost:8001/cluster
-#   RabbitMQ UI:    http://localhost:15672  (guest/guest)
+#   RabbitMQ UI:    http://localhost:15672  (user/password from .env)
 
 x-storage-node: &storage-node
   image: erms/storage-node:latest
@@ -13,9 +14,13 @@ x-storage-node: &storage-node
 services:
   rabbitmq:
     image: rabbitmq:3.13-management
+    hostname: rabbitmq          # fixed node name -> the data volume is found again after a restart
     environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?run ./scripts/init-env.sh first}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?run ./scripts/init-env.sh first}
       # refresh management-API queue stats every 1s (default 5s) so queue depth is visible in demos
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit collect_statistics_interval 1000"
+    volumes: ["rabbitmq:/var/lib/rabbitmq"]   # durable queues + persistent messages survive restarts
     ports: ["5672:5672", "15672:15672"]
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
@@ -28,6 +33,8 @@ services:
     build: { context: ., dockerfile: coordinator/Dockerfile }
     environment:
       HEARTBEAT_TIMEOUT: "6"
+      REPLICAS_PER_SHARD: "2"
+      BOOTSTRAP_GRACE: "8"
     ports: ["8001:8000"]
     restart: unless-stopped
 
@@ -61,7 +68,7 @@ services:
     build: { context: ., dockerfile: request_service/Dockerfile }
     environment:
       COORDINATOR_URL: http://coordinator:8000
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?run ./scripts/init-env.sh first}:${RABBITMQ_PASSWORD:?run ./scripts/init-env.sh first}@rabbitmq:5672/
       MATCHING_SERVICE_URL: http://matching-service:8000
     ports: ["8080:8000"]
     depends_on:
@@ -74,7 +81,7 @@ services:
     build: { context: ., dockerfile: matching_service/Dockerfile }
     environment:
       COORDINATOR_URL: http://coordinator:8000
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: amqp://${RABBITMQ_USER:?run ./scripts/init-env.sh first}:${RABBITMQ_PASSWORD:?run ./scripts/init-env.sh first}@rabbitmq:5672/
       PREFETCH: "2"
       RETRY_DELAY_MS: "5000"
       MAX_MATCH_ATTEMPTS: "12"
@@ -82,6 +89,10 @@ services:
       MATCH_DELAY_MS: "1500"
       STALE_PENDING_SECONDS: "30"
       SWEEP_INTERVAL: "10"
+      RECONCILE_INTERVAL: "10"
+      RECONCILE_GRACE: "20"
+      SHUTDOWN_GRACE: "20"
+    stop_grace_period: 30s      # time to finish in-flight messages on stop
     deploy:
       replicas: 2
     depends_on:
@@ -90,6 +101,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  rabbitmq: {}
   storage-0a: {}
   storage-0b: {}
   storage-1a: {}

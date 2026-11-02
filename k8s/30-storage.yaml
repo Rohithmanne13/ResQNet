@@ -34,9 +34,14 @@ spec:
           volumeMounts: [{ name: data, mountPath: /data }]
           resources:
             requests: { cpu: 50m, memory: 64Mi }
-      # emptyDir survives container restarts but not pod deletion: a deleted pod
-      # comes back empty and rebuilds itself from its peer replica (resync).
-      volumes: [{ name: data, emptyDir: {} }]
+  # Persistent volume per pod: a deleted/rescheduled pod keeps its data and only catches up on the
+  # writes it missed (resync is an idempotent last-writer-wins merge). Losing both pods of a shard
+  # at once no longer loses the shard's data.
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 1Gi } }
 ---
 apiVersion: v1
 kind: Service
@@ -74,9 +79,14 @@ spec:
           volumeMounts: [{ name: data, mountPath: /data }]
           resources:
             requests: { cpu: 50m, memory: 64Mi }
-      # emptyDir survives container restarts but not pod deletion: a deleted pod
-      # comes back empty and rebuilds itself from its peer replica (resync).
-      volumes: [{ name: data, emptyDir: {} }]
+  # Persistent volume per pod: a deleted/rescheduled pod keeps its data and only catches up on the
+  # writes it missed (resync is an idempotent last-writer-wins merge). Losing both pods of a shard
+  # at once no longer loses the shard's data.
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 1Gi } }
 ---
 apiVersion: v1
 kind: Service
@@ -114,6 +124,11 @@ spec:
           volumeMounts: [{ name: data, mountPath: /data }]
           resources:
             requests: { cpu: 50m, memory: 64Mi }
-      # emptyDir survives container restarts but not pod deletion: a deleted pod
-      # comes back empty and rebuilds itself from its peer replica (resync).
-      volumes: [{ name: data, emptyDir: {} }]
+  # Persistent volume per pod: a deleted/rescheduled pod keeps its data and only catches up on the
+  # writes it missed (resync is an idempotent last-writer-wins merge). Losing both pods of a shard
+  # at once no longer loses the shard's data.
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 1Gi } }

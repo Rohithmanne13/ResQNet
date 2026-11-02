@@ -1,20 +1,39 @@
+# RabbitMQ as a single-replica StatefulSet: stable hostname (rabbitmq-0) + persistent volume, so durable
+# queues and persistent messages survive pod restarts/deletion. Credentials come from the
+# rabbitmq-credentials Secret (created by deploy.sh with a random password), never from plain env values.
+apiVersion: v1
+kind: Service
+metadata: { name: rabbitmq-headless, namespace: erms }
+spec:
+  clusterIP: None
+  selector: { app: rabbitmq }
+  ports: [{ name: amqp, port: 5672, targetPort: 5672 }]
+---
 apiVersion: apps/v1
-kind: Deployment
+kind: StatefulSet
 metadata: { name: rabbitmq, namespace: erms, labels: { app: rabbitmq } }
 spec:
+  serviceName: rabbitmq-headless
   replicas: 1
   selector: { matchLabels: { app: rabbitmq } }
   template:
     metadata: { labels: { app: rabbitmq } }
     spec:
+      securityContext: { fsGroup: 999 }   # rabbitmq user in the image owns the data volume
+      terminationGracePeriodSeconds: 30
       containers:
         - name: rabbitmq
           image: rabbitmq:3.13-management
           env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: username } }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: password } }
             - { name: RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS, value: "-rabbit collect_statistics_interval 1000" }
           ports:
             - { name: amqp, containerPort: 5672 }
             - { name: management, containerPort: 15672 }
+          volumeMounts: [{ name: data, mountPath: /var/lib/rabbitmq }]
           readinessProbe:
             exec: { command: ["rabbitmq-diagnostics", "-q", "ping"] }
             initialDelaySeconds: 10
@@ -22,6 +41,11 @@ spec:
             timeoutSeconds: 10
           resources:
             requests: { cpu: 100m, memory: 256Mi }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        resources: { requests: { storage: 1Gi } }
 ---
 apiVersion: v1
 kind: Service

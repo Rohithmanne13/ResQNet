@@ -7,13 +7,18 @@ spec:
   template:
     metadata: { labels: { app: matching-service } }
     spec:
+      terminationGracePeriodSeconds: 30   # finish in-flight messages before exit (see SHUTDOWN_GRACE)
       containers:
         - name: matching-service
           image: erms/matching-service:latest
           imagePullPolicy: IfNotPresent
           env:
             - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
-            - { name: RABBITMQ_URL, value: "amqp://guest:guest@rabbitmq:5672/" }
+            - name: RABBITMQ_USER
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: username } }
+            - name: RABBITMQ_PASSWORD
+              valueFrom: { secretKeyRef: { name: rabbitmq-credentials, key: password } }
+            - { name: RABBITMQ_URL, value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/" }
             - { name: PREFETCH, value: "2" }
             - { name: RETRY_DELAY_MS, value: "5000" }
             - { name: MAX_MATCH_ATTEMPTS, value: "12" }
@@ -21,6 +26,9 @@ spec:
             - { name: MATCH_DELAY_MS, value: "1500" }
             - { name: STALE_PENDING_SECONDS, value: "30" }
             - { name: SWEEP_INTERVAL, value: "10" }
+            - { name: RECONCILE_INTERVAL, value: "10" }
+            - { name: RECONCILE_GRACE, value: "20" }
+            - { name: SHUTDOWN_GRACE, value: "20" }
           ports: [{ containerPort: 8000 }]
           readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }

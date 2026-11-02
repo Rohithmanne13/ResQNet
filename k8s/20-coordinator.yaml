@@ -14,6 +14,8 @@ spec:
           imagePullPolicy: IfNotPresent
           env:
             - { name: HEARTBEAT_TIMEOUT, value: "6" }
+            - { name: REPLICAS_PER_SHARD, value: "2" }
+            - { name: BOOTSTRAP_GRACE, value: "8" }
           ports: [{ containerPort: 8000 }]
           readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
           livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
