@@ -9,11 +9,14 @@ the resource, so two matchers can never take the same last unit of capacity.
 import logging
 import os
 import socket
+from datetime import datetime, timezone
 
 from common.geo import haversine_km
 from common.models import MATCHABLE_REQUEST_STATUSES, now_iso, request_key, resource_prefix
 from common.resources import release, try_assign
 from common.storage_client import Conflict, NotFound, StorageClient
+
+from .metrics import MATCHED_BY_TYPE, MATCHES, TIME_TO_MATCH
 
 MAX_MATCH_DISTANCE_KM = float(os.getenv("MAX_MATCH_DISTANCE_KM", "50"))
 WORKER_ID = os.getenv("HOSTNAME") or socket.gethostname()
@@ -34,7 +37,29 @@ def rank_candidates(request: dict, resources: list[dict], max_km: float = MAX_MA
     return out
 
 
+async def _request_uses(store: StorageClient, key: str, resource_id: str) -> bool:
+    """True if the request is currently matched / in progress on this resource (i.e. its claim is in use)."""
+    try:
+        req = (await store.get(key))["value"]
+    except NotFound:
+        return False
+    return req.get("status") in ("matched", "in_progress") and req.get("assigned_resource") == resource_id
+
+
 async def match_request(store: StorageClient, request_id: str, source: str) -> dict:
+    """match_request + Prometheus metrics (outcome counter; creation-to-assignment time on success)."""
+    result = await _match_request(store, request_id, source)
+    via = "queue" if source == "queue" else "api"
+    MATCHES.labels(result["result"], via).inc()
+    if result["result"] == "matched":
+        MATCHED_BY_TYPE.labels(result.get("type", "other")).inc()
+        if result.get("created_at"):
+            waited = (datetime.now(timezone.utc) - datetime.fromisoformat(result["created_at"])).total_seconds()
+            TIME_TO_MATCH.labels(via).observe(max(waited, 0.0))
+    return result
+
+
+async def _match_request(store: StorageClient, request_id: str, source: str) -> dict:
     """Try to assign the best available resource. Returns a result dict with key 'result':
     matched | no_match | skipped | not_found."""
     key = request_key(request_id)
@@ -82,13 +107,21 @@ async def match_request(store: StorageClient, request_id: str, source: str) -> d
         try:
             await store.put(key, req, if_version=version)
         except Conflict:
-            # Request changed under us (e.g. matched by another worker or cancelled): undo and re-evaluate.
-            await release(store, res["id"], request_id)
+            # The request changed under us (matched by a concurrent call, cancelled, ...). Claims are per request,
+            # so a concurrent call for the SAME request shares this unit: give it back only if the request is not
+            # now using it, then re-evaluate (a matched request is reported as skipped).
+            if not await _request_uses(store, key, res["id"]):
+                await release(store, res["id"], request_id)
             continue
+        # A concurrent call that lost may have released the shared unit just before we committed: make sure the
+        # request still holds it (no-op when it does). If it cannot be re-claimed the reconciler re-opens it.
+        if not await try_assign(store, res["id"], request_id, req["type"]):
+            log.warning("%s committed on %s but its unit is gone; the reconciler will repair it", request_id, res["id"])
         log.info("MATCHED %s (%s) -> %s '%s' at %.2f km [via %s]",
                  request_id, req["type"], res["id"], res.get("name"), dist, source)
         return {"result": "matched", "request_id": request_id, "resource_id": res["id"],
-                "resource_name": res.get("name"), "distance_km": dist, "matched_by": WORKER_ID}
+                "resource_name": res.get("name"), "distance_km": dist, "matched_by": WORKER_ID,
+                "type": req["type"], "created_at": req.get("created_at")}
     return {"result": "no_match", "request_id": request_id, "reason": "contention"}
 
 

@@ -1,0 +1,3748 @@
+{
+ "target": "k8s",
+ "endpoints": "API http://192.168.49.2:30080  coordinator http://192.168.49.2:30081  RabbitMQ http://192.168.49.2:30672  Grafana http://192.168.49.2:30030  namespace erms",
+ "started": "2026-11-19 23:52:00",
+ "finished": "2026-11-20 00:04:14",
+ "declared": [
+  "1.1.a",
+  "1.1.b",
+  "1.a",
+  "1.b",
+  "1.c",
+  "1.d",
+  "1.op1",
+  "1.op2",
+  "1.op3",
+  "1.op4",
+  "1.op5",
+  "10.async",
+  "10.create",
+  "10.dist",
+  "10.fail",
+  "10.k8srecover",
+  "10.k8sscale",
+  "10.match",
+  "10.recover",
+  "10.register",
+  "11.a",
+  "11.b",
+  "11.c",
+  "11.cond",
+  "11.d",
+  "11.e",
+  "11.f",
+  "11.g",
+  "11.h",
+  "11.i",
+  "11.j",
+  "12",
+  "2.clients",
+  "2.coord",
+  "2.docker",
+  "2.k8s",
+  "2.mq",
+  "2.ms",
+  "2.repl",
+  "2.shards",
+  "3.1.created",
+  "3.1.details",
+  "3.1.id",
+  "3.1.loc",
+  "3.1.status",
+  "3.1.type",
+  "3.1.types",
+  "3.2.avail",
+  "3.2.id",
+  "3.2.kinds",
+  "3.2.loc",
+  "3.2.status",
+  "3.2.type",
+  "3.maintain",
+  "4.a",
+  "4.b",
+  "4.c",
+  "4.d",
+  "4.e",
+  "5.1",
+  "5.2",
+  "5.3",
+  "5.4",
+  "5.400",
+  "5.404",
+  "5.5",
+  "5.503",
+  "5.6",
+  "5.7",
+  "5.json",
+  "5.ok",
+  "6.del",
+  "6.get",
+  "6.hb",
+  "6.mq",
+  "6.put",
+  "6.reg",
+  "7.1",
+  "7.2",
+  "7.3",
+  "7.4",
+  "7.5",
+  "7.6",
+  "7.loc",
+  "7.type",
+  "8.avoid",
+  "8.continue",
+  "8.demo",
+  "8.detect",
+  "8.hb",
+  "8.replica",
+  "8.sync",
+  "9.1.a",
+  "9.1.b",
+  "9.1.c",
+  "9.1.d",
+  "9.2.a",
+  "9.2.b",
+  "9.2.c",
+  "9.2.d",
+  "9.2.e",
+  "9.2.f",
+  "9.2.local",
+  "X18.down",
+  "X18.hpa",
+  "X18.install",
+  "X18.manual",
+  "X18.safe",
+  "X18.scaledobject",
+  "X18.secret",
+  "X18.up",
+  "X18.visible",
+  "X39.both",
+  "X39.failure",
+  "X39.grafana",
+  "X39.metrics",
+  "X39.nodata",
+  "X39.panels",
+  "X39.rabbit",
+  "X39.scrape",
+  "X39.secure",
+  "X39.traffic"
+ ],
+ "results": [
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_exactly_one_coordinator",
+   "name": "test_exactly_one_coordinator",
+   "title": "\u00a72 Table 1 'Coordinator: 1' / \u00a74 'one coordinator': exactly one coordinator runs, every storage node is registered with it and every service sends its storage operations to it.",
+   "reqs": [
+    "2.coord",
+    "4.b"
+   ],
+   "outcome": "passed",
+   "duration": 32.12720803500008,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "exactly one coordinator container/pod is running",
+     "1 running"
+    ],
+    [
+     true,
+     "the coordinator Deployment declares replicas: 1",
+     "replicas=1, strategy=Recreate"
+    ],
+    [
+     true,
+     "the coordinator answers GET /health",
+     "{'status': 'ok', 'healthy_shards': [0, 1, 2], 'nodes': 6}"
+    ],
+    [
+     true,
+     "all 6 storage nodes are registered with this one coordinator",
+     "['storage-shard-0-0', 'storage-shard-0-1', 'storage-shard-1-0', 'storage-shard-1-1', 'storage-shard-2-0', 'storage-shard-2-1']"
+    ],
+    [
+     true,
+     "request-service sends every storage operation to the coordinator",
+     "COORDINATOR_URL=http://coordinator:8000"
+    ],
+    [
+     true,
+     "matching-service sends every storage operation to the coordinator",
+     "COORDINATOR_URL=http://coordinator:8000"
+    ],
+    [
+     true,
+     "storage nodes register / heartbeat with the coordinator",
+     "COORDINATOR_URL=http://coordinator:8000"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_two_to_three_microservices",
+   "name": "test_two_to_three_microservices",
+   "title": "\u00a72 Table 1 'Microservices: 2-3': the application is split into separately deployed microservices.",
+   "reqs": [
+    "2.ms"
+   ],
+   "outcome": "passed",
+   "duration": 1.6794582740000124,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "microservice 'request-service' is deployed on its own (client REST API; stores requests; publishes them to RabbitMQ)",
+     "2 instance(s)"
+    ],
+    [
+     true,
+     "microservice 'matching-service' is deployed on its own (consumes RabbitMQ messages; finds and assigns resources)",
+     "2 instance(s)"
+    ],
+    [
+     true,
+     "microservice 'coordinator' is deployed on its own (storage-layer service: shard routing, replication, failure detection)",
+     "1 instance(s)"
+    ],
+    [
+     true,
+     "request-service is healthy",
+     "{'status': 'ok', 'instance': 'request-service-7f7cf84b97-rdjp8', 'broker_connected': True}"
+    ],
+    [
+     true,
+     "matching-service is healthy (called from inside the request-service container)",
+     "{\"status\":\"ok\",\"worker\":\"matching-service-5675cb9575-jz6p9\",\"broker_connected\":true}"
+    ],
+    [
+     true,
+     "2-3 microservices: 2 application services + the coordinator = 3",
+     "request-service, matching-service, coordinator; storage nodes are the shards, RabbitMQ the broker"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_one_rabbitmq_instance",
+   "name": "test_one_rabbitmq_instance",
+   "title": "\u00a72 Table 1 'Message broker: 1 RabbitMQ instance', used by the request and matching services.",
+   "reqs": [
+    "2.mq",
+    "6.mq"
+   ],
+   "outcome": "passed",
+   "duration": 0.9654057650000141,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "exactly one RabbitMQ container/pod is running",
+     "1 running"
+    ],
+    [
+     true,
+     "the RabbitMQ StatefulSet declares replicas: 1",
+     "replicas=1"
+    ],
+    [
+     true,
+     "the broker is a single RabbitMQ node (not a cluster)",
+     "rabbit@rabbitmq-0"
+    ],
+    [
+     null,
+     "RabbitMQ version",
+     "3.13.7"
+    ],
+    [
+     true,
+     "request-service is configured to use that broker",
+     "RABBITMQ_URL host = rabbitmq:5672"
+    ],
+    [
+     true,
+     "matching-service is configured to use that broker",
+     "RABBITMQ_URL host = rabbitmq:5672"
+    ],
+    [
+     true,
+     "every request-service and matching-service instance is connected to it",
+     "5 AMQP connections (expected >= 4)"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_three_shards_each_with_a_replica",
+   "name": "test_three_shards_each_with_a_replica",
+   "title": "\u00a72 'Storage shards: 3', 'Replication: at least 1 replica per shard' / \u00a74 'three storage shards, and at least one replica for each shard'.",
+   "reqs": [
+    "2.shards",
+    "2.repl",
+    "4.b"
+   ],
+   "outcome": "passed",
+   "duration": 0.5390747070000543,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "the storage layer has exactly 3 shards",
+     "num_shards=3"
+    ],
+    [
+     true,
+     "shard 0 = 1 primary copy + at least 1 replica",
+     "['storage-shard-0-0', 'storage-shard-0-1']"
+    ],
+    [
+     true,
+     "shard 0: every copy is up and ready",
+     "{'storage-shard-0-0': 'ready', 'storage-shard-0-1': 'ready'}"
+    ],
+    [
+     true,
+     "shard 1 = 1 primary copy + at least 1 replica",
+     "['storage-shard-1-0', 'storage-shard-1-1']"
+    ],
+    [
+     true,
+     "shard 1: every copy is up and ready",
+     "{'storage-shard-1-0': 'ready', 'storage-shard-1-1': 'ready'}"
+    ],
+    [
+     true,
+     "shard 2 = 1 primary copy + at least 1 replica",
+     "['storage-shard-2-0', 'storage-shard-2-1']"
+    ],
+    [
+     true,
+     "shard 2: every copy is up and ready",
+     "{'storage-shard-2-0': 'ready', 'storage-shard-2-1': 'ready'}"
+    ],
+    [
+     true,
+     "StatefulSet storage-shard-0 runs 2 ready pods",
+     "replicas=2 ready=2"
+    ],
+    [
+     true,
+     "StatefulSet storage-shard-1 runs 2 ready pods",
+     "replicas=2 ready=2"
+    ],
+    [
+     true,
+     "StatefulSet storage-shard-2 runs 2 ready pods",
+     "replicas=2 ready=2"
+    ],
+    [
+     true,
+     "the replicas of each shard hold the same number of records",
+     "key counts per shard: {'0': [1074, 1074], '1': [1030, 1030], '2': [1106, 1106]}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_one_or_more_clients",
+   "name": "test_one_or_more_clients",
+   "title": "\u00a72 Table 1 'Clients: 1 or more': the API is usable by any HTTP/JSON client and by several at the same time.",
+   "reqs": [
+    "2.clients"
+   ],
+   "outcome": "passed",
+   "duration": 0.4401453920000904,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "an interactive client (Swagger UI) is served at /docs",
+     "http://192.168.49.2:30080/docs -> 200"
+    ],
+    [
+     true,
+     "POST /requests is published in the machine-readable API description",
+     "openapi.json"
+    ],
+    [
+     true,
+     "GET /requests/{request_id} is published in the machine-readable API description",
+     "openapi.json"
+    ],
+    [
+     true,
+     "PUT /requests/{request_id}/status is published in the machine-readable API description",
+     "openapi.json"
+    ],
+    [
+     true,
+     "POST /resources is published in the machine-readable API description",
+     "openapi.json"
+    ],
+    [
+     true,
+     "GET /resources is published in the machine-readable API description",
+     "openapi.json"
+    ],
+    [
+     true,
+     "PUT /resources/{resource_id}/status is published in the machine-readable API description",
+     "openapi.json"
+    ],
+    [
+     true,
+     "POST /match/{request_id} is published in the machine-readable API description",
+     "openapi.json"
+    ],
+    [
+     true,
+     "5 independent clients working at the same time are all served (create 201, read 200)",
+     "[(201, 200), (201, 200), (201, 200), (201, 200), (201, 200)]"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_createRequest",
+   "name": "test_createRequest",
+   "title": "\u00a71 createRequest(type, location, details) - 'Create an emergency request' = POST /requests (201).",
+   "reqs": [
+    "1.op1",
+    "5.1",
+    "7.1",
+    "10.create",
+    "11.a"
+   ],
+   "outcome": "passed",
+   "duration": 0.05548208400000476,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "POST /requests with exactly {type, location, details} -> 201 Created",
+     "201"
+    ],
+    [
+     true,
+     "the response is JSON",
+     "application/json"
+    ],
+    [
+     true,
+     "the new request got an id",
+     "req-7834bc8e070f"
+    ],
+    [
+     true,
+     "'type' is stored as submitted",
+     "water"
+    ],
+    [
+     true,
+     "'location' is stored as submitted",
+     "{'lat': -40.91689, 'lon': -141.395461, 'area': 'spec-5d2581'}"
+    ],
+    [
+     true,
+     "'details' is stored as submitted",
+     "two people stranded on a roof, need drinking water"
+    ],
+    [
+     true,
+     "a new request starts in status 'pending'",
+     "pending"
+    ],
+    [
+     true,
+     "it was handed to RabbitMQ for asynchronous matching",
+     "queued=True"
+    ],
+    [
+     true,
+     "it was written to its shard on both copies",
+     "{'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1'], 'version': 1795112560665620003, 'degraded': False}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_getRequest",
+   "name": "test_getRequest",
+   "title": "\u00a71 getRequest(requestId) - 'Retrieve request information' = GET /requests/{id} (200).",
+   "reqs": [
+    "1.op5",
+    "5.2",
+    "10.create",
+    "11.a"
+   ],
+   "outcome": "passed",
+   "duration": 0.06733382200002325,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "GET /requests/{id} -> 200 OK",
+     "200"
+    ],
+    [
+     true,
+     "returned 'id' equals what was created",
+     "req-e78f2015d423"
+    ],
+    [
+     true,
+     "returned 'type' equals what was created",
+     "food"
+    ],
+    [
+     true,
+     "returned 'location' equals what was created",
+     "{'lat': -40.91689, 'lon': -136.895461, 'area': 'spec-5d2581'}"
+    ],
+    [
+     true,
+     "returned 'details' equals what was created",
+     "food for 12 people in a flooded school"
+    ],
+    [
+     true,
+     "returned 'status' equals what was created",
+     "pending"
+    ],
+    [
+     true,
+     "returned 'created_at' equals what was created",
+     "2026-11-19T18:22:40.719+00:00"
+    ],
+    [
+     true,
+     "the read was served by a copy of the request's own shard",
+     "shard 2, served_by storage-shard-2-0"
+    ],
+    [
+     true,
+     "reading again returns the same data",
+     ""
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_registerResource",
+   "name": "test_registerResource",
+   "title": "\u00a71 registerResource(type, location, availability) - 'Register a resource or volunteer' = POST /resources.",
+   "reqs": [
+    "1.op2",
+    "5.4",
+    "10.register",
+    "11.b"
+   ],
+   "outcome": "passed",
+   "duration": 0.14181143899998006,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "POST /resources with exactly {type, location, availability} -> 201 Created",
+     "201"
+    ],
+    [
+     true,
+     "the resource got an id",
+     "res-water-ea4ec842e102"
+    ],
+    [
+     true,
+     "'type' is stored as submitted",
+     "water"
+    ],
+    [
+     true,
+     "'location' is stored as submitted",
+     "{'lat': -40.907907, 'lon': -132.395461, 'area': 'spec-5d2581'}"
+    ],
+    [
+     true,
+     "'availability' is stored as submitted",
+     "5"
+    ],
+    [
+     true,
+     "a resource with capacity starts 'available'",
+     "available"
+    ],
+    [
+     true,
+     "a volunteer can be registered too (kind=volunteer) -> 201",
+     "res-transportation-2a5f0db271d7"
+    ],
+    [
+     true,
+     "the registered resource appears in GET /resources",
+     "104 water resources"
+    ],
+    [
+     true,
+     "and can be read back by id",
+     "200"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_matchRequest",
+   "name": "test_matchRequest",
+   "title": "\u00a71 matchRequest(requestId) - 'Find and assign a suitable available resource' = POST /match/{requestId}.",
+   "reqs": [
+    "1.op3",
+    "5.7",
+    "10.match",
+    "11.c",
+    "7.5",
+    "7.6"
+   ],
+   "outcome": "passed",
+   "duration": 0.24421642800007248,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "POST /match/{requestId} -> 200 OK",
+     "200"
+    ],
+    [
+     true,
+     "a resource was found and assigned",
+     "Water tanker (res-water-9dc4371a0890) at 1.998 km"
+    ],
+    [
+     true,
+     "the distance is computed from the two locations",
+     "1.998"
+    ],
+    [
+     true,
+     "the request is now 'matched' to that resource",
+     "{'resource_id': 'res-water-9dc4371a0890', 'resource_name': 'Water tanker', 'kind': 'resource', 'distance_km': 1.998, 'matched_at': '2026-11-19T18:22:41.045+00:00', 'matched_by': 'matching-service-5675cb9575-2d68c', 'via': 'api'}"
+    ],
+    [
+     true,
+     "one unit of the resource is assigned to the request",
+     "availability 3 -> 2, assigned_requests=['req-dfa9cb9baf60']"
+    ],
+    [
+     true,
+     "matching an already-matched request again does not take a second unit",
+     "{'result': 'skipped', 'request_id': 'req-dfa9cb9baf60', 'status': 'matched', 'assigned_resource': 'res-water-9dc4371a0890'}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_updateStatus",
+   "name": "test_updateStatus",
+   "title": "\u00a71 updateStatus(requestId, status) - 'Update the status of a request' = PUT /requests/{id}/status (200).",
+   "reqs": [
+    "1.op4",
+    "5.3",
+    "11.a"
+   ],
+   "outcome": "passed",
+   "duration": 0.36579829199990854,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "PUT /requests/{id}/status {'status': 'in_progress'} -> 200 OK",
+     "200"
+    ],
+    [
+     true,
+     "the stored status is now 'in_progress'",
+     "previous_status=matched"
+    ],
+    [
+     true,
+     "PUT /requests/{id}/status {'status': 'resolved'} -> 200 OK",
+     "200"
+    ],
+    [
+     true,
+     "the stored status is now 'resolved'",
+     "previous_status=in_progress"
+    ],
+    [
+     true,
+     "resolving the request released the resource's capacity",
+     "availability back to 1, status available"
+    ],
+    [
+     true,
+     "every status change is recorded in the request history",
+     "['pending', 'matched', 'in_progress', 'resolved']"
+    ],
+    [
+     true,
+     "updated_at moves forward",
+     "2026-11-19T18:22:41.206+00:00 -> 2026-11-19T18:22:41.337+00:00"
+    ],
+    [
+     true,
+     "a pending request can be cancelled -> 200",
+     "200"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_supported_request_types",
+   "name": "test_supported_request_types",
+   "title": "\u00a71 'requests such as food, water, medicine, transportation, or shelter' / \u00a73.1 example request types.",
+   "reqs": [
+    "1.b",
+    "3.1.types",
+    "1.c"
+   ],
+   "outcome": "passed",
+   "duration": 1.6264126920000308,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "a 'water' request is accepted (201)",
+     "req-5b64a84a802a"
+    ],
+    [
+     true,
+     "the 'water' request is matched to the 'water' resource",
+     "matched -> water provider"
+    ],
+    [
+     true,
+     "a 'food' request is accepted (201)",
+     "req-ed0a0c6ff4f3"
+    ],
+    [
+     true,
+     "the 'food' request is matched to the 'food' resource",
+     "matched -> food provider"
+    ],
+    [
+     true,
+     "a 'medicine' request is accepted (201)",
+     "req-2e45c6a1fac9"
+    ],
+    [
+     true,
+     "the 'medicine' request is matched to the 'medicine' resource",
+     "matched -> medicine provider"
+    ],
+    [
+     true,
+     "a 'transportation' request is accepted (201)",
+     "req-4682f1615e93"
+    ],
+    [
+     true,
+     "the 'transportation' request is matched to the 'transportation' resource",
+     "matched -> transportation provider"
+    ],
+    [
+     true,
+     "a 'shelter' request is accepted (201)",
+     "req-96ce757a432b"
+    ],
+    [
+     true,
+     "the 'shelter' request is matched to the 'shelter' resource",
+     "matched -> shelter provider"
+    ],
+    [
+     true,
+     "an unknown request type is rejected (422)",
+     "Value error, type must be one of ['food', 'medicine', 'other', 'rescue', 'shelter', 'trans"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_request_record_fields",
+   "name": "test_request_record_fields",
+   "title": "\u00a73.1 'Each request should contain, at minimum: unique request ID, request type, location, request details, current status, creation time'.",
+   "reqs": [
+    "3.1.id",
+    "3.1.type",
+    "3.1.loc",
+    "3.1.details",
+    "3.1.status",
+    "3.1.created",
+    "11.a"
+   ],
+   "outcome": "passed",
+   "duration": 1.2318167610000046,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "unique request ID: present",
+     "req-396a0cd01d2c"
+    ],
+    [
+     true,
+     "unique request ID: 25 requests created at the same time all got different ids",
+     "25 distinct of 25"
+    ],
+    [
+     true,
+     "request type",
+     "medicine"
+    ],
+    [
+     true,
+     "location (latitude / longitude)",
+     "{'lat': -40.91689, 'lon': -42.395461, 'area': 'spec-5d2581'}"
+    ],
+    [
+     true,
+     "request details",
+     "insulin for a diabetic patient"
+    ],
+    [
+     true,
+     "current status",
+     "pending"
+    ],
+    [
+     true,
+     "creation time (ISO-8601 timestamp with time zone, taken when the request was created)",
+     "2026-11-19T18:22:43.203+00:00"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_resource_record_fields_and_kinds",
+   "name": "test_resource_record_fields_and_kinds",
+   "title": "\u00a73.2 'Each resource should contain, at minimum: unique resource ID, resource type, location, availability, current status' and 'may represent a physical resource, volunteer, NGO, or other available source'.",
+   "reqs": [
+    "3.2.id",
+    "3.2.type",
+    "3.2.loc",
+    "3.2.avail",
+    "3.2.status",
+    "3.2.kinds",
+    "11.b"
+   ],
+   "outcome": "passed",
+   "duration": 2.8876707439999336,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "unique resource ID: present",
+     "res-shelter-b9c65a21b5ec"
+    ],
+    [
+     true,
+     "unique resource ID: 15 resources registered at the same time all got different ids",
+     "15 distinct of 15"
+    ],
+    [
+     true,
+     "resource type",
+     "shelter"
+    ],
+    [
+     true,
+     "location",
+     "{'lat': -40.91689, 'lon': -33.395461, 'area': 'spec-5d2581'}"
+    ],
+    [
+     true,
+     "availability (units of capacity)",
+     "40"
+    ],
+    [
+     true,
+     "current status",
+     "available"
+    ],
+    [
+     true,
+     "a resource of kind 'resource' can be registered",
+     "res-food-f4d46110cfea"
+    ],
+    [
+     true,
+     "a resource of kind 'volunteer' can be registered",
+     "res-food-a3115abf67a4"
+    ],
+    [
+     true,
+     "a resource of kind 'ngo' can be registered",
+     "res-food-d7c9a2ea986d"
+    ],
+    [
+     true,
+     "a resource of kind 'other' can be registered",
+     "res-food-0f4a96d798e5"
+    ],
+    [
+     true,
+     "an unknown kind is rejected (422)",
+     "422"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_system_maintains_requests_and_resources",
+   "name": "test_system_maintains_requests_and_resources",
+   "title": "\u00a73 'The system should maintain information about emergency requests and available resources' and \u00a75 GET /resources 'List resources' (200).",
+   "reqs": [
+    "3.maintain",
+    "5.5"
+   ],
+   "outcome": "passed",
+   "duration": 1.3348918530001583,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "GET /resources -> 200 OK with a JSON list",
+     "348 resources across all shards"
+    ],
+    [
+     true,
+     "the list contains the resources just registered (from whichever shard holds them)",
+     "res-water-afefc7c7fcfe (shard 1), res-food-5826670903d4 (shard 0)"
+    ],
+    [
+     true,
+     "GET /resources?type=water lists only water resources",
+     "108 items"
+    ],
+    [
+     true,
+     "GET /resources?status=available lists only available ones",
+     "26 items"
+    ],
+    [
+     true,
+     "no shard was missing from the list",
+     "[]"
+    ],
+    [
+     true,
+     "requests are kept as well (GET /requests)",
+     "1791 water requests"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_resource_availability_updates",
+   "name": "test_resource_availability_updates",
+   "title": "\u00a75 PUT /resources/{id}/status (200) and \u00a711 'Resource registration and availability updates'.",
+   "reqs": [
+    "5.6",
+    "11.b",
+    "3.2.avail",
+    "3.2.status"
+   ],
+   "outcome": "passed",
+   "duration": 0.47813947700001336,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "PUT /resources/{id}/status {'availability': 5} -> 200 OK",
+     "availability 3 -> 5"
+    ],
+    [
+     true,
+     "PUT {'status': 'offline'} -> 200, resource offline",
+     "offline"
+    ],
+    [
+     true,
+     "an offline resource is not used for matching (409: no suitable resource)",
+     "409"
+    ],
+    [
+     true,
+     "back to 'available' -> the same request is now matched to it",
+     "matched"
+    ],
+    [
+     true,
+     "matching consumed one unit (5 -> 4)",
+     "4"
+    ],
+    [
+     true,
+     "availability 0 -> status becomes 'busy' automatically",
+     "busy"
+    ],
+    [
+     true,
+     "availability 2 -> 'available' again",
+     "available"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_flood_victim_needs_drinking_water_end_to_end",
+   "name": "test_flood_victim_needs_drinking_water_end_to_end",
+   "title": "\u00a71.1 example scenario and \u00a77 steps 1-6: 'a user affected by flooding requires drinking water. The request is submitted, processed asynchronously, matched with an available resource, and the request status is updated.' User -> Request Service -> RabbitMQ -> Matching Service -> Distributed Storage -> Resource Assigned.",
+   "reqs": [
+    "1.1.a",
+    "1.1.b",
+    "1.a",
+    "7.1",
+    "7.2",
+    "7.3",
+    "7.4",
+    "7.5",
+    "7.6",
+    "6.mq",
+    "11.e",
+    "11.cond",
+    "10.match"
+   ],
+   "outcome": "passed",
+   "duration": 6.988299768000047,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "1. the client submits the request: POST /requests -> 201",
+     "201"
+    ],
+    [
+     true,
+     "   the API answers at once, before any matching happened (asynchronous): status 'pending'",
+     "answered in 23 ms"
+    ],
+    [
+     true,
+     "2. the Request Service stored the request in the distributed storage",
+     "shard 1, read from storage-shard-1-0"
+    ],
+    [
+     true,
+     "   the record is physically on both copies of its shard",
+     "{'storage-shard-1-0': 200, 'storage-shard-1-1': 200}"
+    ],
+    [
+     true,
+     "3. the request was published to RabbitMQ (queued: true)",
+     "True"
+    ],
+    [
+     true,
+     "   RabbitMQ received it into queue 'matching.requests'",
+     "publish counter 1 -> 2"
+    ],
+    [
+     true,
+     "4. the Matching Service consumed the message (matched by the queue consumer, not the sync API)",
+     "via=queue"
+    ],
+    [
+     true,
+     "   ... in one of the matching-service instances",
+     "matching-service-5675cb9575-2d68c (running now: ['matching-service-5675cb9575-2d68c', 'matching-service-5675cb9575-jz6p9'])"
+    ],
+    [
+     true,
+     "   the message was acknowledged to RabbitMQ after processing",
+     "ack counter 1 -> 2"
+    ],
+    [
+     true,
+     "5. a suitable available resource was identified: same type, available, the nearest one",
+     "NGO water tanker at 2.997 km (the other water resource is 20 km away)"
+    ],
+    [
+     true,
+     "6. the request status was updated to 'matched'",
+     "matched"
+    ],
+    [
+     true,
+     "   the resource was assigned: capacity 2 -> 1, request in its assigned list",
+     "availability 1"
+    ],
+    [
+     true,
+     "   the assignment is persisted in the distributed storage",
+     "2026-11-19T18:22:50.773+00:00"
+    ],
+    [
+     true,
+     "help delivered: status -> in_progress -> resolved, tanker capacity released (1 -> 2)",
+     "2"
+    ],
+    [
+     true,
+     "the request history shows the whole lifecycle",
+     "['pending', 'matched', 'in_progress', 'resolved']"
+    ],
+    [
+     null,
+     "the path the request took",
+     "User -> request-service (request-service-7f7cf84b97-rdjp8) -> RabbitMQ (erms.requests -> matching.requests) -> matching-service (matching-service-5675cb9575-2d68c) -> storage shard 1 ['storage-shard-1-0', 'storage-shard-1-1'] -> resource assigned (NGO water tanker)"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_matching_considers_resource_type",
+   "name": "test_matching_considers_resource_type",
+   "title": "\u00a77 'The matching mechanism should consider at least resource type' (and location).",
+   "reqs": [
+    "7.type",
+    "1.c",
+    "11.c"
+   ],
+   "outcome": "passed",
+   "duration": 0.31733566499997323,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "a medicine request is matched to the medicine resource, not the closer food resource",
+     "pharmacy, 10 km at 9.989 km"
+    ],
+    [
+     true,
+     "the food resource was not touched",
+     ""
+    ],
+    [
+     true,
+     "a shelter request with only food/medicine nearby gets no match (409)",
+     "no suitable available resource"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_matching_considers_location",
+   "name": "test_matching_considers_location",
+   "title": "\u00a77 'The matching mechanism should consider at least resource type and location'.",
+   "reqs": [
+    "7.loc",
+    "1.c",
+    "11.c"
+   ],
+   "outcome": "passed",
+   "duration": 3.182704549999926,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "closest first: 3 requests at the same place get the 5 km, then 15 km, then 25 km resource",
+     "['5 km (4.994 km)', '15 km (14.983 km)', '25 km (24.972 km)']"
+    ],
+    [
+     true,
+     "a resource beyond the matching radius (50 km) is not assigned: 80 km -> 409",
+     "{'message': 'no suitable available resource', 'result': 'no_match', 'request_id': 'req-b5d331250fff', 'candidates': 0, 'unavailable_shards': []}"
+    ],
+    [
+     true,
+     "a resource within 50 km is assigned: 40 km -> 200",
+     "39.955 km"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_matching_uses_only_available_resources",
+   "name": "test_matching_uses_only_available_resources",
+   "title": "\u00a77 step 5 'A suitable AVAILABLE resource is identified': offline or fully-used resources are skipped.",
+   "reqs": [
+    "7.5",
+    "11.c"
+   ],
+   "outcome": "passed",
+   "duration": 0.46966715099995326,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "a resource with availability 0 is registered as 'busy'",
+     "busy"
+    ],
+    [
+     true,
+     "the request skips the offline (1 km) and busy (2 km) ones and gets the available one (9 km)",
+     "available, 9 km at 8.99 km"
+    ],
+    [
+     true,
+     "after its last unit is taken the resource is 'busy'",
+     "busy"
+    ],
+    [
+     true,
+     "so a further request gets no match (409)",
+     ""
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_multiple_requests_processed_through_rabbitmq",
+   "name": "test_multiple_requests_processed_through_rabbitmq",
+   "title": "\u00a710 'Asynchronous Processing: submit multiple requests and demonstrate processing through RabbitMQ' and \u00a711 'RabbitMQ message delivery and processing'.",
+   "reqs": [
+    "10.async",
+    "11.d",
+    "11.e",
+    "6.mq",
+    "1.d"
+   ],
+   "outcome": "passed",
+   "duration": 12.143140456000083,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "15 requests submitted at the same time are all accepted (201) and queued",
+     "in 0.22s"
+    ],
+    [
+     true,
+     "RabbitMQ buffered the burst while the matching workers processed it",
+     "peak backlog in matching.requests: 7 messages"
+    ],
+    [
+     true,
+     "all 15 requests were matched",
+     "5.6s after submission"
+    ],
+    [
+     true,
+     "every one of them came through the RabbitMQ consumer",
+     ""
+    ],
+    [
+     true,
+     "the work was shared by the matching-service instances (competing consumers)",
+     "{'matching-service-5675cb9575-jz6p9': 8, 'matching-service-5675cb9575-2d68c': 7}"
+    ],
+    [
+     true,
+     "RabbitMQ counted >= 15 messages published and acknowledged",
+     "publish +15, ack +15"
+    ],
+    [
+     true,
+     "exactly 15 units were assigned, one per request, none twice",
+     "availability 15 -> 0, status busy"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_simultaneous_requests_never_double_assign",
+   "name": "test_simultaneous_requests_never_double_assign",
+   "title": "\u00a711 'Multiple simultaneous requests': many requests created and matched at the same moment never over-assign a resource, and racing matches of the same request take only one unit.",
+   "reqs": [
+    "11.d",
+    "11.c"
+   ],
+   "outcome": "passed",
+   "duration": 6.494551545000036,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "30 simultaneous creations: all 201 with distinct ids",
+     "spread over shards {1: 11, 0: 13, 2: 6}"
+    ],
+    [
+     true,
+     "30 simultaneous POST /match against 20 units: exactly 20 succeed (200), 10 get 409",
+     "{200: 20, 409: 10}"
+    ],
+    [
+     true,
+     "the resource is never over-assigned: availability exactly 0, 'busy'",
+     "availability 0, busy"
+    ],
+    [
+     true,
+     "its assigned list is exactly the matched requests (no duplicates, no strays)",
+     "20"
+    ],
+    [
+     true,
+     "8 simultaneous POST /match of the SAME request all answer 200",
+     "Counter({'skipped': 7, 'matched': 1})"
+    ],
+    [
+     true,
+     "... and it holds exactly one unit (5 -> 4), listed once",
+     "['req-d87fd8b25bc6']"
+    ],
+    [
+     true,
+     "the request is matched to that resource",
+     "matched"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_rabbitmq_topology",
+   "name": "test_rabbitmq_topology",
+   "title": "\u00a76 'RabbitMQ should be used for asynchronous communication between the request-processing and matching components' - exchange, queue, binding, consumers and retry path.",
+   "reqs": [
+    "6.mq",
+    "11.e"
+   ],
+   "outcome": "passed",
+   "duration": 0.2124150729999883,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "request-service publishes to exchange 'erms.requests' (topic, durable)",
+     "type=topic durable=True"
+    ],
+    [
+     true,
+     "queue 'matching.requests' is durable (survives broker restarts)",
+     "True"
+    ],
+    [
+     true,
+     "erms.requests is bound to matching.requests with routing key 'request.#'",
+     "[('matching.requests', 'request.#')]"
+    ],
+    [
+     true,
+     "every matching-service instance is a consumer of matching.requests",
+     "2 consumers, 2 matching instances"
+    ],
+    [
+     true,
+     "unmatched requests are retried later via 'matching.retry' (TTL, dead-lettered back to erms.requests)",
+     "ttl=5000 ms"
+    ],
+    [
+     true,
+     "request-service is connected to the broker",
+     ""
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_data_distributed_across_three_shards_and_nodes",
+   "name": "test_data_distributed_across_three_shards_and_nodes",
+   "title": "\u00a74 'Requests and resources must be stored across multiple storage nodes' / \u00a710 'Data Distribution: demonstrate distribution across the three storage shards' - checked on each node's own disk.",
+   "reqs": [
+    "4.a",
+    "10.dist",
+    "11.f",
+    "1.d"
+   ],
+   "outcome": "passed",
+   "duration": 5.921961066999984,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "requests are spread over all 3 shards",
+     "12 requests: {0: 6, 1: 3, 2: 3}"
+    ],
+    [
+     true,
+     "resources are spread over all 3 shards",
+     "10 resources: {0: 5, 1: 3, 2: 2}"
+    ],
+    [
+     true,
+     "every shard holds data",
+     "records per node: {'0': [1126, 1132], '1': [1081, 1085], '2': [1149, 1151]}"
+    ],
+    [
+     true,
+     "request on shard 0 is on the disk of exactly its shard's 2 nodes",
+     "request:req-5ee311e9f52a -> ['storage-shard-0-0', 'storage-shard-0-1']"
+    ],
+    [
+     true,
+     "   both copies are identical (same version)",
+     "{1795112597063504566}"
+    ],
+    [
+     true,
+     "resource on shard 0 is on the disk of exactly its shard's 2 nodes",
+     "resource:food:res-food-919abb54929b -> ['storage-shard-0-0', 'storage-shard-0-1']"
+    ],
+    [
+     true,
+     "   both copies are identical (same version)",
+     "{1795112597343449645}"
+    ],
+    [
+     true,
+     "request on shard 1 is on the disk of exactly its shard's 2 nodes",
+     "request:req-ebaf115730da -> ['storage-shard-1-0', 'storage-shard-1-1']"
+    ],
+    [
+     true,
+     "   both copies are identical (same version)",
+     "{1795112597118426496}"
+    ],
+    [
+     true,
+     "resource on shard 1 is on the disk of exactly its shard's 2 nodes",
+     "resource:water:res-water-5384fc88ca02 -> ['storage-shard-1-0', 'storage-shard-1-1']"
+    ],
+    [
+     true,
+     "   both copies are identical (same version)",
+     "{1795112597326885231}"
+    ],
+    [
+     true,
+     "request on shard 2 is on the disk of exactly its shard's 2 nodes",
+     "request:req-6974e0ebf4cb -> ['storage-shard-2-0', 'storage-shard-2-1']"
+    ],
+    [
+     true,
+     "   both copies are identical (same version)",
+     "{1795112597099865266}"
+    ],
+    [
+     true,
+     "resource on shard 2 is on the disk of exactly its shard's 2 nodes",
+     "resource:water:res-water-b90d77f79c6b -> ['storage-shard-2-0', 'storage-shard-2-1']"
+    ],
+    [
+     true,
+     "   both copies are identical (same version)",
+     "{1795112597417572967}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_coordinator_selects_shard_by_hash_mod_3",
+   "name": "test_coordinator_selects_shard_by_hash_mod_3",
+   "title": "\u00a74 'The coordinator determines the appropriate shard and routes storage operations. A simple hash-based partitioning mechanism may be used. For example: hash(request_id) mod 3'.",
+   "reqs": [
+    "4.c",
+    "4.d",
+    "11.f"
+   ],
+   "outcome": "passed",
+   "duration": 2.3047292090001292,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "every record was stored on shard = sha256(key) mod 3 (recomputed by the test)",
+     "45/45 correct"
+    ],
+    [
+     null,
+     "example: request:req-d66b31e9ba33",
+     "sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']"
+    ],
+    [
+     null,
+     "example: request:req-c0efaa53012a",
+     "sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']"
+    ],
+    [
+     null,
+     "example: resource:water:res-water-be74eddf9fc6",
+     "sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']"
+    ],
+    [
+     true,
+     "the coordinator's own routing table agrees (GET /internal/shard-of/{key})",
+     "10/10 keys"
+    ],
+    [
+     true,
+     "the shard choice is deterministic (same key -> same shard every time)",
+     "5 keys asked twice"
+    ],
+    [
+     true,
+     "reads are routed to a node of the key's shard",
+     "15/15 reads routed correctly"
+    ],
+    [
+     true,
+     "writes are routed to (all) the replicas of that shard",
+     "45/45 writes acked by both copies"
+    ],
+    [
+     null,
+     "load spread of these 45 keys over the shards",
+     "{0: 15, 1: 14, 2: 16}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_client_does_not_need_the_storage_location",
+   "name": "test_client_does_not_need_the_storage_location",
+   "title": "\u00a74 'The client should not need to know the physical storage location of the requested data.'",
+   "reqs": [
+    "4.e"
+   ],
+   "outcome": "passed",
+   "duration": 0.5130724670000291,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "no client endpoint takes a shard / node / replica parameter",
+     "['request_id', 'resource_id', 'status', 'type']"
+    ],
+    [
+     true,
+     "request bodies carry no storage location either",
+     "['auto_match', 'availability', 'contact', 'details', 'kind', 'location', 'name', 'priority', 'requester', 'type']"
+    ],
+    [
+     true,
+     "records on all 3 shards are read with the same URL, only the id is needed",
+     "GET /requests/{id} for ids on shards [0, 1, 2] -> [200, 200, 200]"
+    ],
+    [
+     true,
+     "the request-service knows only the coordinator, not any storage node",
+     "COORDINATOR_URL=http://coordinator:8000"
+    ],
+    [
+     true,
+     "storage pods sit behind headless in-cluster Services only (no NodePort)",
+     "{'storage-shard-0': ('ClusterIP', 'None'), 'storage-shard-1': ('ClusterIP', 'None'), 'storage-shard-2': ('ClusterIP', 'None')}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_client_api_success_codes",
+   "name": "test_client_api_success_codes",
+   "title": "\u00a75 Table 2: each client endpoint returns the success code listed in the PDF.",
+   "reqs": [
+    "5.ok",
+    "5.1",
+    "5.2",
+    "5.3",
+    "5.4",
+    "5.5",
+    "5.6",
+    "5.7"
+   ],
+   "outcome": "passed",
+   "duration": 0.3276710789999697,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "POST /resources                 -> 201",
+     "got 201"
+    ],
+    [
+     true,
+     "GET  /resources                 -> 200",
+     "got 200"
+    ],
+    [
+     true,
+     "PUT  /resources/{id}/status     -> 200",
+     "got 200"
+    ],
+    [
+     true,
+     "POST /requests                  -> 201",
+     "got 201"
+    ],
+    [
+     true,
+     "GET  /requests/{id}             -> 200",
+     "got 200"
+    ],
+    [
+     true,
+     "POST /match/{requestId}         -> 200",
+     "got 200"
+    ],
+    [
+     true,
+     "PUT  /requests/{id}/status      -> 200",
+     "got 200"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_json_request_and_response_bodies",
+   "name": "test_json_request_and_response_bodies",
+   "title": "\u00a75 'Structured request and response data should use JSON.'",
+   "reqs": [
+    "5.json"
+   ],
+   "outcome": "passed",
+   "duration": 0.2140192440000419,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "POST /requests (201): Content-Type application/json with a JSON body",
+     "application/json"
+    ],
+    [
+     true,
+     "GET /requests/{id} (200): Content-Type application/json with a JSON body",
+     "application/json"
+    ],
+    [
+     true,
+     "GET /resources (200): Content-Type application/json with a JSON body",
+     "application/json"
+    ],
+    [
+     true,
+     "POST /match/{id} (409): Content-Type application/json with a JSON body",
+     "application/json"
+    ],
+    [
+     true,
+     "GET /requests/{missing} (404): Content-Type application/json with a JSON body",
+     "application/json"
+    ],
+    [
+     true,
+     "POST /requests invalid (422): Content-Type application/json with a JSON body",
+     "application/json"
+    ],
+    [
+     true,
+     "PUT /resources/{missing}/status (404): Content-Type application/json with a JSON body",
+     "application/json"
+    ],
+    [
+     true,
+     "a non-JSON request body is rejected (422)",
+     "422"
+    ],
+    [
+     true,
+     "malformed JSON is rejected (422)",
+     "json_invalid"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_invalid_requests_get_4xx",
+   "name": "test_invalid_requests_get_4xx",
+   "title": "\u00a75 'appropriate HTTP status codes for ... invalid requests' (422 validation, 400 bad input, 409 conflict).",
+   "reqs": [
+    "5.400"
+   ],
+   "outcome": "passed",
+   "duration": 0.2272445759998618,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "POST /requests without type -> 422",
+     "got 422: Field required"
+    ],
+    [
+     true,
+     "POST /requests with type 'pizza' -> 422",
+     "got 422: Value error, type must be one of ['food', 'medicine', 'other', 'rescue"
+    ],
+    [
+     true,
+     "POST /requests without location -> 422",
+     "got 422: Field required"
+    ],
+    [
+     true,
+     "POST /requests with latitude 123 -> 422",
+     "got 422: Input should be less than or equal to 90"
+    ],
+    [
+     true,
+     "POST /requests with longitude -200 -> 422",
+     "got 422: Input should be greater than or equal to -180"
+    ],
+    [
+     true,
+     "POST /requests with 2001-char details -> 422",
+     "got 422: String should have at most 2000 characters"
+    ],
+    [
+     true,
+     "POST /resources with availability -1 -> 422",
+     "got 422: Input should be greater than or equal to 0"
+    ],
+    [
+     true,
+     "POST /resources with availability 'lots' -> 422",
+     "got 422: Input should be a valid integer, unable to parse string as an integer"
+    ],
+    [
+     true,
+     "PUT /requests/{id}/status 'flying' -> 422",
+     "got 422: Value error, status must be one of ['cancelled', 'in_progress', 'match"
+    ],
+    [
+     true,
+     "PUT /requests/{id}/status without status -> 422",
+     "got 422: Field required"
+    ],
+    [
+     true,
+     "PUT /resources/{id}/status with an empty body -> 400",
+     "got 400: provide status and/or availability"
+    ],
+    [
+     true,
+     "PUT /resources/{id}/status availability 0 + 'available' -> 400",
+     "got 400: a resource with availability 0 cannot be 'available'"
+    ],
+    [
+     true,
+     "PUT /resources/{id}/status 'sleeping' -> 422",
+     "got 422: Value error, status must be one of ['available', 'busy', 'offline']"
+    ],
+    [
+     true,
+     "GET /resources?type=pizza -> 422",
+     "got 422: type must be one of ['food', 'medicine', 'other', 'rescue', 'shelter',"
+    ],
+    [
+     true,
+     "PUT /requests/{id}/status 'matched' without a resource -> 409",
+     "got 409: cannot set 'matched' without an assigned resource; use POST /match"
+    ],
+    [
+     true,
+     "PUT 'pending' on a cancelled request -> 409",
+     "got 409: request is already cancelled; cannot change to pending"
+    ],
+    [
+     true,
+     "POST /match/{id} with no suitable resource -> 409",
+     "got 409: no suitable available resource"
+    ],
+    [
+     true,
+     "nothing was stored by the rejected creates (resource still has 1 unit)",
+     ""
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_missing_resources_get_404",
+   "name": "test_missing_resources_get_404",
+   "title": "\u00a75 'appropriate HTTP status codes for ... missing resources' (404).",
+   "reqs": [
+    "5.404"
+   ],
+   "outcome": "passed",
+   "duration": 0.0502644059999966,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "GET /requests/{unknown id} -> 404",
+     "got 404: request:req-000000000000 not found"
+    ],
+    [
+     true,
+     "PUT /requests/{unknown id}/status -> 404",
+     "got 404: request:req-000000000000 not found"
+    ],
+    [
+     true,
+     "GET /resources/{unknown id} -> 404",
+     "got 404: resource:water:res-water-000000000000 not found"
+    ],
+    [
+     true,
+     "PUT /resources/{unknown id}/status -> 404",
+     "got 404: resource:water:res-water-000000000000 not found"
+    ],
+    [
+     true,
+     "PUT /resources/{malformed id}/status -> 404",
+     "got 404: resource:_invalid:not-an-id not found"
+    ],
+    [
+     true,
+     "POST /match/{unknown id} -> 404",
+     "got 404: request req-000000000000 not found"
+    ],
+    [
+     true,
+     "GET /no-such-endpoint -> 404",
+     "got 404: Not Found"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_internal_node_register",
+   "name": "test_internal_node_register",
+   "title": "\u00a76 POST /internal/nodes/register - 'Register storage node'.",
+   "reqs": [
+    "6.reg"
+   ],
+   "outcome": "passed",
+   "duration": 1.7470125080000116,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "a node for a non-existent shard is refused (400) and not added",
+     "{'detail': 'shard_id must be in [0, 3)'}"
+    ],
+    [
+     true,
+     "all storage nodes registered themselves on start-up",
+     "[('storage-shard-0-0', 0), ('storage-shard-0-1', 0), ('storage-shard-1-0', 1), ('storage-shard-1-1', 1), ('storage-shard-2-0', 2), ('storage-shard-2-1', 2)]"
+    ],
+    [
+     true,
+     "POST /internal/nodes/register with a node's own details -> 200",
+     "{'status': 'syncing', 'resync': True, 'peers': ['http://10.244.0.18:8000'], 'num_shards': 3}"
+    ],
+    [
+     true,
+     "a (re)joining node is told to sync from the ready replica of its shard before serving reads",
+     "status=syncing peers=['http://10.244.0.18:8000'] num_shards=3"
+    ],
+    [
+     true,
+     "the real node reports itself ready again with its next heartbeat",
+     "storage-shard-0-1"
+    ],
+    [
+     null,
+     "storage node log",
+     "30,232 [storage-storage-shard-0-1] INFO registered with coordinator (shard 0, url http://10.244.0.12:8000): syncing; peers=['http://10.244.0.18:8000']"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_internal_heartbeats_are_periodic",
+   "name": "test_internal_heartbeats_are_periodic",
+   "title": "\u00a76 POST /internal/nodes/heartbeat 'Report node availability' / \u00a78 'Storage nodes should periodically report their availability to the coordinator using heartbeat messages.'",
+   "reqs": [
+    "6.hb",
+    "8.hb"
+   ],
+   "outcome": "passed",
+   "duration": 5.699342033999983,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "a heartbeat from an unknown node -> 404 (it must register first)",
+     "unknown node; register first"
+    ],
+    [
+     true,
+     "storage-shard-0-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
+     "beat age 0.5s -> -0.4s, advanced 4.3s in 5s"
+    ],
+    [
+     true,
+     "storage-shard-0-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
+     "beat age 0.5s -> -0.4s, advanced 4.3s in 5s"
+    ],
+    [
+     true,
+     "storage-shard-1-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
+     "beat age 1.8s -> -1.0s, advanced 6.2s in 5s"
+    ],
+    [
+     true,
+     "storage-shard-1-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
+     "beat age 0.6s -> -0.4s, advanced 4.4s in 5s"
+    ],
+    [
+     true,
+     "storage-shard-2-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
+     "beat age 0.6s -> -0.4s, advanced 4.4s in 5s"
+    ],
+    [
+     true,
+     "storage-shard-2-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
+     "beat age 0.6s -> -0.4s, advanced 4.4s in 5s"
+    ],
+    [
+     true,
+     "POST /internal/nodes/heartbeat from a registered node -> 200",
+     "{'resync': False}"
+    ],
+    [
+     null,
+     "configuration",
+     "storage HEARTBEAT_INTERVAL=2 (default)s, coordinator HEARTBEAT_TIMEOUT=6s"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_internal_data_api",
+   "name": "test_internal_data_api",
+   "title": "\u00a76 PUT / GET / DELETE /internal/data/{key} - 'Store or update data', 'Retrieve data', 'Delete data' (both at the coordinator and on the storage nodes it routes to).",
+   "reqs": [
+    "6.put",
+    "6.get",
+    "6.del"
+   ],
+   "outcome": "passed",
+   "duration": 4.6333522989999665,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "PUT /internal/data/{key} -> 200, stored on the key's shard",
+     "{'key': 'spec-test:5d2581', 'version': 1795112612220549242, 'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1'], 'degraded': False}"
+    ],
+    [
+     true,
+     "   and written to every replica of that shard",
+     "['storage-shard-1-0', 'storage-shard-1-1']"
+    ],
+    [
+     true,
+     "GET /internal/data/{key} -> 200 with the stored value",
+     "version 1795112612220549242, served_by storage-shard-1-0"
+    ],
+    [
+     true,
+     "   the value is on the disk of both replicas with the same version",
+     "['storage-shard-1-0', 'storage-shard-1-1']"
+    ],
+    [
+     true,
+     "PUT again = update -> 200, new version",
+     "1795112612220549242 -> 1795112613386926712"
+    ],
+    [
+     true,
+     "an update based on an old version is refused (409, optimistic concurrency)",
+     "{'detail': {'message': 'version conflict', 'current_version': 1795112613386926712}}"
+    ],
+    [
+     true,
+     "prefix scan GET /internal/data?prefix= finds it",
+     "[]"
+    ],
+    [
+     true,
+     "DELETE /internal/data/{key} -> 200",
+     "{'key': 'spec-test:5d2581', 'deleted': True, 'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1']}"
+    ],
+    [
+     true,
+     "   afterwards GET -> 404",
+     ""
+    ],
+    [
+     true,
+     "   and it is deleted on both replicas",
+     "{'storage-shard-1-0': 404, 'storage-shard-1-1': 404}"
+    ],
+    [
+     true,
+     "the storage node itself (storage-shard-1-0) serves PUT / GET / DELETE /internal/data/{key} for the coordinator",
+     "PUT 200, GET 200, DELETE 200, GET after delete 404"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_dockerfiles_for_every_service",
+   "name": "test_dockerfiles_for_every_service",
+   "title": "\u00a79.1 'Create Dockerfiles for the required services.'",
+   "reqs": [
+    "9.1.a",
+    "2.docker"
+   ],
+   "outcome": "passed",
+   "duration": 0.2237756630000831,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "request_service/Dockerfile exists and builds the request-service service",
+     "FROM python:3.12-slim ... CMD uvicorn request_service.app:app"
+    ],
+    [
+     true,
+     "matching_service/Dockerfile exists and builds the matching-service service",
+     "FROM python:3.12-slim ... CMD uvicorn matching_service.app:app"
+    ],
+    [
+     true,
+     "coordinator/Dockerfile exists and builds the coordinator service",
+     "FROM python:3.12-slim ... CMD uvicorn coordinator.app:app"
+    ],
+    [
+     true,
+     "storage_node/Dockerfile exists and builds the storage-node service",
+     "FROM python:3.12-slim ... CMD uvicorn storage_node.app:app"
+    ],
+    [
+     true,
+     "docker-compose builds 'coordinator' from its Dockerfile",
+     "coordinator/Dockerfile"
+    ],
+    [
+     null,
+     "grafana uses an official image (no Dockerfile needed)",
+     "grafana/grafana:13.2.5"
+    ],
+    [
+     true,
+     "docker-compose builds 'matching-service' from its Dockerfile",
+     "matching_service/Dockerfile"
+    ],
+    [
+     null,
+     "prometheus uses an official image (no Dockerfile needed)",
+     "prom/prometheus:v3.15.1"
+    ],
+    [
+     null,
+     "rabbitmq uses an official image (no Dockerfile needed)",
+     "rabbitmq:3.13-management"
+    ],
+    [
+     true,
+     "docker-compose builds 'request-service' from its Dockerfile",
+     "request_service/Dockerfile"
+    ],
+    [
+     true,
+     "docker-compose builds 'storage-0a' from its Dockerfile",
+     "storage_node/Dockerfile"
+    ],
+    [
+     true,
+     "docker-compose builds 'storage-0b' from its Dockerfile",
+     "storage_node/Dockerfile"
+    ],
+    [
+     true,
+     "docker-compose builds 'storage-1a' from its Dockerfile",
+     "storage_node/Dockerfile"
+    ],
+    [
+     true,
+     "docker-compose builds 'storage-1b' from its Dockerfile",
+     "storage_node/Dockerfile"
+    ],
+    [
+     true,
+     "docker-compose builds 'storage-2a' from its Dockerfile",
+     "storage_node/Dockerfile"
+    ],
+    [
+     true,
+     "docker-compose builds 'storage-2b' from its Dockerfile",
+     "storage_node/Dockerfile"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_docker_images_are_built",
+   "name": "test_docker_images_are_built",
+   "title": "\u00a79.1 'Build Docker images.'",
+   "reqs": [
+    "9.1.b",
+    "2.docker"
+   ],
+   "outcome": "passed",
+   "duration": 0.542452940999965,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "image erms/request-service:latest is built",
+     "created 2026-11-19T15:00:08, 165 MB, CMD uvicorn request_service.app:app"
+    ],
+    [
+     true,
+     "image erms/matching-service:latest is built",
+     "created 2026-11-19T15:00:08, 165 MB, CMD uvicorn matching_service.app:app"
+    ],
+    [
+     true,
+     "image erms/coordinator:latest is built",
+     "created 2026-11-19T17:27:12, 165 MB, CMD uvicorn coordinator.app:app"
+    ],
+    [
+     true,
+     "image erms/storage-node:latest is built",
+     "created 2026-11-19T15:00:08, 165 MB, CMD uvicorn storage_node.app:app"
+    ],
+    [
+     true,
+     "erms/request-service:latest is loaded into the Kubernetes cluster",
+     "minikube image ls"
+    ],
+    [
+     true,
+     "erms/matching-service:latest is loaded into the Kubernetes cluster",
+     "minikube image ls"
+    ],
+    [
+     true,
+     "erms/coordinator:latest is loaded into the Kubernetes cluster",
+     "minikube image ls"
+    ],
+    [
+     true,
+     "erms/storage-node:latest is loaded into the Kubernetes cluster",
+     "minikube image ls"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_components_run_as_containers",
+   "name": "test_components_run_as_containers",
+   "title": "\u00a79.1 'Run application components as containers.'",
+   "reqs": [
+    "9.1.c",
+    "2.docker",
+    "1.d"
+   ],
+   "outcome": "passed",
+   "duration": 0.6446227860000135,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "pod coordinator-6cd87f5d9b-w64tv runs its container",
+     "docker.io/erms/coordinator:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod grafana-688cd64b59-kp26g runs its container",
+     "docker.io/grafana/grafana:13.2.5, restarts 1"
+    ],
+    [
+     true,
+     "pod matching-service-5675cb9575-2d68c runs its container",
+     "docker.io/erms/matching-service:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod matching-service-5675cb9575-jz6p9 runs its container",
+     "docker.io/erms/matching-service:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod prometheus-66c7fdf75c-cfjf5 runs its container",
+     "docker.io/prom/prometheus:v3.15.1, restarts 1"
+    ],
+    [
+     true,
+     "pod rabbitmq-0 runs its container",
+     "docker.io/library/rabbitmq:3.13-management, restarts 1"
+    ],
+    [
+     true,
+     "pod request-service-7f7cf84b97-qqlnf runs its container",
+     "docker.io/erms/request-service:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod request-service-7f7cf84b97-rdjp8 runs its container",
+     "docker.io/erms/request-service:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod storage-shard-0-0 runs its container",
+     "docker.io/erms/storage-node:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod storage-shard-0-1 runs its container",
+     "docker.io/erms/storage-node:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod storage-shard-1-0 runs its container",
+     "docker.io/erms/storage-node:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod storage-shard-1-1 runs its container",
+     "docker.io/erms/storage-node:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod storage-shard-2-0 runs its container",
+     "docker.io/erms/storage-node:latest, restarts 1"
+    ],
+    [
+     true,
+     "pod storage-shard-2-1 runs its container",
+     "docker.io/erms/storage-node:latest, restarts 1"
+    ],
+    [
+     true,
+     "every component runs in its pods (matching-service: 2+ pods, autoscaled by KEDA)",
+     "{'coordinator': 1, 'grafana': 1, 'matching-service': 2, 'prometheus': 1, 'rabbitmq': 1, 'request-service': 2, 'storage-node': 6}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_containers_communicate",
+   "name": "test_containers_communicate",
+   "title": "\u00a79.1 'Configure communication between containers' (service DNS names on the Docker network / Kubernetes Services): each component reaches the ones it depends on from inside its own container.",
+   "reqs": [
+    "9.1.d",
+    "9.2.d"
+   ],
+   "outcome": "passed",
+   "duration": 12.362773607000008,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "request-service -> coordinator (http://coordinator:8000/health)",
+     "{\"status\":\"ok\",\"healthy_shards\":[0,1,2],\"nodes\":6}"
+    ],
+    [
+     true,
+     "request-service -> matching-service (http://matching-service:8000/health)",
+     "{\"status\":\"ok\",\"worker\":\"matching-service-5675cb9575-jz6p9\",\"broker_connected\":t"
+    ],
+    [
+     true,
+     "matching-service -> coordinator (http://coordinator:8000/health)",
+     "{\"status\":\"ok\",\"healthy_shards\":[0,1,2],\"nodes\":6}"
+    ],
+    [
+     true,
+     "request-service -> rabbitmq:5672 (AMQP)",
+     "TCP connect"
+    ],
+    [
+     true,
+     "matching-service -> rabbitmq:5672 (AMQP)",
+     "TCP connect"
+    ],
+    [
+     true,
+     "coordinator -> storage node storage-shard-0-0 (http://10.244.0.18:8000)",
+     "ready"
+    ],
+    [
+     true,
+     "coordinator -> storage node storage-shard-0-1 (http://10.244.0.12:8000)",
+     "ready"
+    ],
+    [
+     true,
+     "coordinator -> storage node storage-shard-1-0 (http://10.244.0.21:8000)",
+     "ready"
+    ],
+    [
+     true,
+     "coordinator -> storage node storage-shard-1-1 (http://10.244.0.23:8000)",
+     "ready"
+    ],
+    [
+     true,
+     "coordinator -> storage node storage-shard-2-0 (http://10.244.0.15:8000)",
+     "ready"
+    ],
+    [
+     true,
+     "coordinator -> storage node storage-shard-2-1 (http://10.244.0.16:8000)",
+     "ready"
+    ],
+    [
+     true,
+     "storage node storage-shard-1-0 -> coordinator (register / heartbeat path)",
+     "{\"status\":\"ok\",\"healthy_shards\":[0,1,2],\"nodes\":6}"
+    ],
+    [
+     null,
+     "how it is configured",
+     "services address each other by name: COORDINATOR_URL=http://coordinator:8000, MATCHING_SERVICE_URL=http://matching-service:8000, RABBITMQ_URL=amqp://...@rabbitmq:5672, storage NODE_URL = pod IP"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_design_choices_are_documented",
+   "name": "test_design_choices_are_documented",
+   "title": "\u00a712 'Students should be able to justify their choices' - the README explains every left-to-design item.",
+   "reqs": [
+    "12"
+   ],
+   "outcome": "passed",
+   "duration": 0.02234376000001248,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "README justifies: programming language and web framework",
+     "'Python 3.12 + FastAPI'"
+    ],
+    [
+     true,
+     "README justifies: storage mechanism of the shards",
+     "'SQLite per node'"
+    ],
+    [
+     true,
+     "README justifies: sharding / partitioning strategy",
+     "'sha256(key) mod 3'"
+    ],
+    [
+     true,
+     "README justifies: replica synchronization mechanism",
+     "'Recovery / synchronisation'"
+    ],
+    [
+     true,
+     "README justifies: resource-matching strategy",
+     "'Matching strategy'"
+    ],
+    [
+     true,
+     "README justifies: RabbitMQ exchange / queue / routing",
+     "'RabbitMQ topology'"
+    ],
+    [
+     true,
+     "README justifies: microservice boundaries and internal API",
+     "'Microservice boundaries'"
+    ],
+    [
+     true,
+     "README justifies: monitoring and logging",
+     "'Monitoring / logging'"
+    ],
+    [
+     true,
+     "README justifies: Kubernetes deployment configuration",
+     "'## Kubernetes' section, manifest table"
+    ],
+    [
+     true,
+     "README has the internal API description",
+     "'## Internal API'"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_deployments",
+   "name": "test_k8s_deployments",
+   "title": "\u00a79.2 'Kubernetes Deployments.'",
+   "reqs": [
+    "9.2.a",
+    "2.k8s",
+    "1.d"
+   ],
+   "outcome": "passed",
+   "duration": 1.2158666909999738,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "Deployment 'request-service' is fully available",
+     "2/2 replicas available"
+    ],
+    [
+     true,
+     "Deployment 'matching-service' is fully available",
+     "2/2 replicas available"
+    ],
+    [
+     true,
+     "Deployment 'coordinator' is fully available",
+     "1/1 replicas available"
+    ],
+    [
+     true,
+     "StatefulSet 'rabbitmq' (stateful: stable identity + persistent volume) is ready",
+     "1/1 ready"
+    ],
+    [
+     true,
+     "StatefulSet 'storage-shard-0' (stateful: stable identity + persistent volume) is ready",
+     "2/2 ready"
+    ],
+    [
+     true,
+     "StatefulSet 'storage-shard-1' (stateful: stable identity + persistent volume) is ready",
+     "2/2 ready"
+    ],
+    [
+     true,
+     "StatefulSet 'storage-shard-2' (stateful: stable identity + persistent volume) is ready",
+     "2/2 ready"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_services",
+   "name": "test_k8s_services",
+   "title": "\u00a79.2 'Kubernetes Services.'",
+   "reqs": [
+    "9.2.b"
+   ],
+   "outcome": "passed",
+   "duration": 1.6404959689999714,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "Service 'request-service' exists (NodePort)",
+     "ports ['8000->node:30080']"
+    ],
+    [
+     true,
+     "   'request-service' routes to running pods",
+     "2 endpoint(s)"
+    ],
+    [
+     true,
+     "Service 'coordinator' exists (NodePort)",
+     "ports ['8000->node:30081']"
+    ],
+    [
+     true,
+     "   'coordinator' routes to running pods",
+     "1 endpoint(s)"
+    ],
+    [
+     true,
+     "Service 'matching-service' exists (ClusterIP)",
+     "ports ['8000']"
+    ],
+    [
+     true,
+     "   'matching-service' routes to running pods",
+     "2 endpoint(s)"
+    ],
+    [
+     true,
+     "Service 'rabbitmq' exists (NodePort)",
+     "ports ['5672->node:31963', '15672->node:30672', '15692->node:31356']"
+    ],
+    [
+     true,
+     "   'rabbitmq' routes to running pods",
+     "1 endpoint(s)"
+    ],
+    [
+     true,
+     "Service 'rabbitmq-headless' exists (ClusterIP, headless)",
+     "ports ['5672']"
+    ],
+    [
+     true,
+     "   'rabbitmq-headless' routes to running pods",
+     "1 endpoint(s)"
+    ],
+    [
+     true,
+     "Service 'storage-shard-0' exists (ClusterIP, headless)",
+     "ports ['8000']"
+    ],
+    [
+     true,
+     "   'storage-shard-0' routes to running pods",
+     "2 endpoint(s)"
+    ],
+    [
+     true,
+     "Service 'storage-shard-1' exists (ClusterIP, headless)",
+     "ports ['8000']"
+    ],
+    [
+     true,
+     "   'storage-shard-1' routes to running pods",
+     "2 endpoint(s)"
+    ],
+    [
+     true,
+     "Service 'storage-shard-2' exists (ClusterIP, headless)",
+     "ports ['8000']"
+    ],
+    [
+     true,
+     "   'storage-shard-2' routes to running pods",
+     "2 endpoint(s)"
+    ],
+    [
+     true,
+     "clients reach the API through the request-service Service (NodePort 30080)",
+     "http://192.168.49.2:30080"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_pod_replicas",
+   "name": "test_k8s_pod_replicas",
+   "title": "\u00a79.2 'Pod replicas.' Several identical pods per microservice, load-balanced by their Service.",
+   "reqs": [
+    "9.2.c"
+   ],
+   "outcome": "passed",
+   "duration": 1.7850612180000098,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "request-service runs >= 2 replica pods from one ReplicaSet",
+     "['request-service-7f7cf84b97-qqlnf', 'request-service-7f7cf84b97-rdjp8'] <- {'request-service-7f7cf84b97'}"
+    ],
+    [
+     true,
+     "matching-service runs >= 2 replica pods from one ReplicaSet",
+     "['matching-service-5675cb9575-2d68c', 'matching-service-5675cb9575-jz6p9'] <- {'matching-service-5675cb9575'}"
+    ],
+    [
+     true,
+     "storage-shard-0 runs 2 pods (primary + replica)",
+     "['storage-shard-0-0', 'storage-shard-0-1']"
+    ],
+    [
+     true,
+     "storage-shard-1 runs 2 pods (primary + replica)",
+     "['storage-shard-1-0', 'storage-shard-1-1']"
+    ],
+    [
+     true,
+     "storage-shard-2 runs 2 pods (primary + replica)",
+     "['storage-shard-2-0', 'storage-shard-2-1']"
+    ],
+    [
+     true,
+     "the request-service Service spreads calls over its replica pods",
+     "{'request-service-7f7cf84b97-rdjp8': 18, 'request-service-7f7cf84b97-qqlnf': 22}"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_runs_on_a_local_cluster",
+   "name": "test_k8s_runs_on_a_local_cluster",
+   "title": "\u00a79.2 'The Kubernetes deployment may be performed locally using Minikube, kind, or Docker Desktop Kubernetes.'",
+   "reqs": [
+    "9.2.local"
+   ],
+   "outcome": "passed",
+   "duration": 0.45711280899990925,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "the cluster is a local Minikube cluster",
+     "context minikube, node minikube, Kubernetes v1.37.0"
+    ],
+    [
+     true,
+     "everything runs in namespace 'erms'",
+     "14 pods (12 application + Prometheus + Grafana)"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_storage_node_failure_before_during_after",
+   "name": "test_storage_node_failure_before_during_after",
+   "title": "\u00a78 'A storage-node failure should be demonstrated by stopping the corresponding container or Kubernetes pod and subsequently restarting it ... before, during, and after the failure': detect the failed node, avoid routing to it, use the replica, continue processing, synchronize the data when it recovers.",
+   "reqs": [
+    "8.detect",
+    "8.avoid",
+    "8.replica",
+    "8.continue",
+    "8.sync",
+    "8.demo",
+    "10.fail",
+    "10.recover",
+    "11.g",
+    "11.h",
+    "11.cond",
+    "1.d"
+   ],
+   "outcome": "passed",
+   "duration": 17.977120481000043,
+   "reason": "",
+   "checks": [
+    [
+     null,
+     "BEFORE: shard 1 = ['storage-shard-1-0', 'storage-shard-1-1']; the node that will be stopped: storage-shard-1-1; its replica: storage-shard-1-0",
+     ""
+    ],
+    [
+     true,
+     "before: every storage node is ready",
+     "{'storage-shard-0-0': 'ready', 'storage-shard-0-1': 'ready', 'storage-shard-1-0': 'ready', 'storage-shard-1-1': 'ready', 'storage-shard-2-0': 'ready', 'storage-shard-2-1': 'ready'}"
+    ],
+    [
+     true,
+     "before: a request on shard 1 is written to both copies",
+     "['storage-shard-1-0', 'storage-shard-1-1']"
+    ],
+    [
+     true,
+     "before: it is readable",
+     "served_by storage-shard-1-0"
+    ],
+    [
+     null,
+     "STOP the storage node",
+     "kubectl -n erms scale statefulset/storage-shard-1 --replicas=1   (stops pod storage-shard-1-1)"
+    ],
+    [
+     true,
+     "during: the coordinator detected that storage-shard-1-1 is unavailable",
+     "6.0s after the stop; reason: no heartbeat for 7.0s"
+    ],
+    [
+     true,
+     "during: shard 1 stays available through its replica storage-shard-1-0",
+     ""
+    ],
+    [
+     true,
+     "during: data written before the failure is still readable - served by the replica",
+     "200, served_by storage-shard-1-0"
+    ],
+    [
+     true,
+     "during: a new request for shard 1 is accepted (201) and routed only to the live replica",
+     "acked by ['storage-shard-1-0']"
+    ],
+    [
+     true,
+     "during: the write is flagged degraded (1 of 2 copies), to be copied on recovery",
+     "{'shard': 1, 'replicas': ['storage-shard-1-0'], 'version': 1795112642430972466, 'degraded': True}"
+    ],
+    [
+     true,
+     "during: matching keeps working on shard 1 (POST /match -> 200)",
+     "Shard-1 water point"
+    ],
+    [
+     true,
+     "during: status updates keep working (PUT /requests/{id}/status -> 200)",
+     "in_progress"
+    ],
+    [
+     true,
+     "during: the asynchronous pipeline (RabbitMQ -> matching -> storage) keeps processing",
+     "req-5d2a24c1f2d6 matched by matching-service-5675cb9575-2d68c"
+    ],
+    [
+     true,
+     "during: no read was sent to the failed node storage-shard-1-1",
+     "reads served by storage-shard-1-1: 0 before, 0 now"
+    ],
+    [
+     true,
+     "during: listing all requests is still complete (no unavailable shard)",
+     "unavailable_shards = []"
+    ],
+    [
+     null,
+     "RESTART the storage node",
+     "kubectl -n erms scale statefulset/storage-shard-1 --replicas=2   (restarts pod storage-shard-1-1)"
+    ],
+    [
+     true,
+     "after: storage-shard-1-1 re-registered, synchronized from storage-shard-1-0 and is ready again",
+     "6.4s after the restart command"
+    ],
+    [
+     true,
+     "after: the request created during the failure is now also on storage-shard-1-1's disk",
+     "version 1795112642529722433"
+    ],
+    [
+     true,
+     "after: the updates made during the failure reached storage-shard-1-1 (request 'in_progress', resource capacity)",
+     "request status in_progress, resource availability 27"
+    ],
+    [
+     true,
+     "after: both copies of shard 1 hold the same number of records",
+     "[1108, 1108]"
+    ],
+    [
+     null,
+     "storage-shard-1-1 log",
+     "[storage-storage-shard-1-1] INFO SYNC complete from http://10.244.0.21:8000: received 1112 records, applied 4 updates; now READY (1108 keys)"
+    ],
+    [
+     true,
+     "after: new writes go to both copies again (not degraded)",
+     "['storage-shard-1-0', 'storage-shard-1-1']"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_matching_service_down_503_and_queue_buffers",
+   "name": "test_matching_service_down_503_and_queue_buffers",
+   "title": "\u00a75 'appropriate HTTP status codes for ... unavailable services' (503) and \u00a711 RabbitMQ delivery: with the matching microservice stopped, /match answers 503 while new requests are still accepted and wait in RabbitMQ; after the restart they are delivered and processed.",
+   "reqs": [
+    "5.503",
+    "11.e",
+    "11.cond",
+    "6.mq"
+   ],
+   "outcome": "passed",
+   "duration": 48.793468545999986,
+   "reason": "",
+   "checks": [
+    [
+     null,
+     "STOP the matching microservice",
+     "./scripts/matching-replicas.sh 0   (0 pods; KEDA autoscaling paused)"
+    ],
+    [
+     true,
+     "POST /match while the matching service is down -> 503 Service Unavailable (JSON)",
+     "matching service unavailable: ConnectError('All connection attempts failed')"
+    ],
+    [
+     true,
+     "the API stays available: new requests are still accepted (201) and queued",
+     "['req-ebadb5975f76', 'req-5b2dd0bb4e28', 'req-614e5b0af4bb']"
+    ],
+    [
+     true,
+     "RabbitMQ holds the messages while no consumer runs",
+     "3 message(s) waiting in matching.requests"
+    ],
+    [
+     true,
+     "nothing is matched while the matching service is down",
+     "all 3 pending"
+    ],
+    [
+     null,
+     "RESTART the matching microservice",
+     "./scripts/matching-replicas.sh auto   (automatic scaling on queue depth again)"
+    ],
+    [
+     true,
+     "the matching consumers re-attach to the queue",
+     "2 consumers for 2 matching pods"
+    ],
+    [
+     true,
+     "the buffered messages are delivered and processed: all 3 requests matched",
+     "['matching-service-5675cb9575-wdwz8', 'matching-service-5675cb9575-wdwz8', 'matching-service-5675cb9575-xmkvr']"
+    ],
+    [
+     true,
+     "POST /match works again (200)",
+     "200"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_whole_shard_down_503_then_recovers",
+   "name": "test_whole_shard_down_503_then_recovers",
+   "title": "\u00a75 'unavailable services' at the storage layer: with BOTH copies of a shard stopped, data on that shard answers 503 (not 500 / wrong data) while the other shards keep working; after the restart the data is back.",
+   "reqs": [
+    "5.503",
+    "8.detect",
+    "11.cond"
+   ],
+   "outcome": "passed",
+   "duration": 18.64203811199991,
+   "reason": "",
+   "checks": [
+    [
+     null,
+     "STOP both copies of the shard",
+     "kubectl -n erms scale statefulset/storage-shard-2 --replicas=0"
+    ],
+    [
+     true,
+     "the coordinator reports shard 2 unavailable",
+     "{'status': 'degraded', 'healthy_shards': [0, 1], 'nodes': 6}"
+    ],
+    [
+     true,
+     "GET of a request on shard 2 -> 503 Service Unavailable",
+     "no ready replica available for shard 2"
+    ],
+    [
+     true,
+     "creating requests: ids that hash to shard 2 -> 503, the others are still stored (201)",
+     "{201: 9, 503: 6}"
+    ],
+    [
+     true,
+     "listing still answers 200 and names the unavailable shard",
+     "[2]"
+    ],
+    [
+     null,
+     "RESTART both copies of the shard",
+     "kubectl -n erms scale statefulset/storage-shard-2 --replicas=2"
+    ],
+    [
+     true,
+     "after the restart the shard's data is back (persistent volumes) -> 200",
+     "200"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_scale_matching_service_with_continued_availability",
+   "name": "test_k8s_scale_matching_service_with_continued_availability",
+   "title": "\u00a79.2 'Microservice scaling' / \u00a710 'Increase the number of replicas of a microservice and demonstrate continued availability' - matching-service 2 -> 4 -> 2 while traffic keeps flowing.",
+   "reqs": [
+    "9.2.e",
+    "10.k8sscale",
+    "11.j"
+   ],
+   "outcome": "passed",
+   "duration": 69.02213565900001,
+   "reason": "",
+   "checks": [
+    [
+     null,
+     "SCALE UP",
+     "./scripts/matching-replicas.sh 4   (KEDA installed: pins the Deployment to 4 pods)"
+    ],
+    [
+     true,
+     "4 matching-service pods are Ready",
+     "['matching-service-5675cb9575-mkmbk', 'matching-service-5675cb9575-wdwz8', 'matching-service-5675cb9575-xcwbk', 'matching-service-5675cb9575-xmkvr']"
+    ],
+    [
+     true,
+     "RabbitMQ sees 4 competing consumers",
+     ""
+    ],
+    [
+     true,
+     "continued availability during the scale-up: every create + health call succeeded",
+     "22/22 succeeded (100%)"
+    ],
+    [
+     true,
+     "the new pods take part: messages were processed by pods added by the scale-up",
+     "{'matching-service-5675cb9575-xcwbk': 5, 'matching-service-5675cb9575-mkmbk': 6, 'matching-service-5675cb9575-xmkvr': 4, 'matching-service-5675cb9575-wdwz8': 5}"
+    ],
+    [
+     null,
+     "SCALE DOWN",
+     "./scripts/matching-replicas.sh 2"
+    ],
+    [
+     true,
+     "continued availability during the scale-down",
+     "59/59 succeeded (100%)"
+    ],
+    [
+     true,
+     "no request was lost while pods were added and removed: all 101 matched",
+     ""
+    ],
+    [
+     true,
+     "capacity is exact afterwards: one unit per matched request",
+     "availability 399 = 500 - 101"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_scale_request_service_with_continued_availability",
+   "name": "test_k8s_scale_request_service_with_continued_availability",
+   "title": "\u00a79.2 'Microservice scaling' for the client-facing microservice: request-service 2 -> 3 -> 2 under traffic.",
+   "reqs": [
+    "9.2.e",
+    "9.2.c",
+    "10.k8sscale",
+    "11.j"
+   ],
+   "outcome": "passed",
+   "duration": 48.23504436899998,
+   "reason": "",
+   "checks": [
+    [
+     null,
+     "SCALE UP",
+     "kubectl -n erms scale deploy/request-service --replicas=3"
+    ],
+    [
+     true,
+     "3 request-service pods are Ready",
+     "['request-service-7f7cf84b97-2ptmm', 'request-service-7f7cf84b97-qqlnf', 'request-service-7f7cf84b97-rdjp8']"
+    ],
+    [
+     true,
+     "continued availability during the scale-up (create + read)",
+     "19/19 succeeded (100%)"
+    ],
+    [
+     true,
+     "the Service sends traffic to all 3 pods",
+     "{'request-service-7f7cf84b97-2ptmm': 22, 'request-service-7f7cf84b97-rdjp8': 23, 'request-service-7f7cf84b97-qqlnf': 15}"
+    ],
+    [
+     null,
+     "SCALE DOWN",
+     "kubectl -n erms scale deploy/request-service --replicas=2"
+    ],
+    [
+     true,
+     "continued availability during the scale-down",
+     "67/67 succeeded (100%)"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_pod_failure_and_automatic_recovery",
+   "name": "test_k8s_pod_failure_and_automatic_recovery",
+   "title": "\u00a79.2 'Pod failure and automatic recovery' / \u00a710 'Terminate a running application pod and demonstrate automatic recovery': a request-service pod, a matching-service pod in the middle of work, and the coordinator pod.",
+   "reqs": [
+    "9.2.f",
+    "10.k8srecover",
+    "11.i"
+   ],
+   "outcome": "passed",
+   "duration": 31.458021774999906,
+   "reason": "",
+   "checks": [
+    [
+     null,
+     "DELETE pod",
+     "kubectl -n erms delete pod request-service-7f7cf84b97-qqlnf"
+    ],
+    [
+     true,
+     "the Deployment replaced the deleted request-service pod automatically",
+     "['request-service-7f7cf84b97-krfcg'] Ready 7s later"
+    ],
+    [
+     true,
+     "the API kept answering while the pod was replaced",
+     "28/28 succeeded (100%)"
+    ],
+    [
+     null,
+     "DELETE pod while it is processing messages",
+     "kubectl -n erms delete pod matching-service-5675cb9575-wdwz8"
+    ],
+    [
+     true,
+     "the Deployment replaced the deleted matching-service pod",
+     "['matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+    ],
+    [
+     true,
+     "no message was lost: all 8 requests queued around the pod kill were matched",
+     "{'matching-service-5675cb9575-xmkvr': 6, 'matching-service-5675cb9575-wdwz8': 2}"
+    ],
+    [
+     true,
+     "and none took two units",
+     "availability 10 -> 2"
+    ],
+    [
+     null,
+     "DELETE pod",
+     "kubectl -n erms delete pod coordinator-6cd87f5d9b-w64tv"
+    ],
+    [
+     true,
+     "the coordinator pod was recreated and all 6 storage nodes re-registered with it",
+     "['coordinator-6cd87f5d9b-n48wj']"
+    ],
+    [
+     true,
+     "data written before the coordinator restart is still served",
+     "written before the coordinator pod is killed"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_spec_compliance.py::test_k8s_storage_pod_killed_reads_fail_over_then_resync",
+   "name": "test_k8s_storage_pod_killed_reads_fail_over_then_resync",
+   "title": "\u00a78 with a Kubernetes pod: delete the storage pod that serves the reads of a shard; reads keep working from the replica, the StatefulSet recreates the pod with the same name and volume, and it catches up.",
+   "reqs": [
+    "8.replica",
+    "8.sync",
+    "9.2.f",
+    "11.g",
+    "11.h",
+    "10.fail",
+    "10.recover"
+   ],
+   "outcome": "passed",
+   "duration": 11.373297848999755,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "before: reads of the shard are served by storage-shard-1-0",
+     ""
+    ],
+    [
+     null,
+     "DELETE pod",
+     "kubectl -n erms delete pod storage-shard-1-0"
+    ],
+    [
+     true,
+     "reads never failed while the pod was down and recreated",
+     "26/26 succeeded (100%)"
+    ],
+    [
+     true,
+     "reads failed over to the replica storage-shard-1-1",
+     "{'storage-shard-1-0': 15, 'storage-shard-1-1': 11}"
+    ],
+    [
+     true,
+     "the StatefulSet recreated the pod with the same name and the same persistent volume",
+     "storage-shard-1-0, PVC data-storage-shard-1-0"
+    ],
+    [
+     true,
+     "the write made while storage-shard-1-0 was gone was synchronized to it",
+     "version 1795112857061597680"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_monitoring_is_deployed",
+   "name": "test_x39_monitoring_is_deployed",
+   "title": "#39: Prometheus and Grafana run as part of this deployment (Compose services / Kubernetes Deployments).",
+   "reqs": [
+    "X39.both"
+   ],
+   "outcome": "passed",
+   "duration": 0.8092134949999945,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "Deployment 'prometheus' is available",
+     "prom/prometheus:v3.15.1"
+    ],
+    [
+     true,
+     "Deployment 'grafana' is available",
+     "grafana/grafana:13.2.5"
+    ],
+    [
+     true,
+     "Prometheus Service NodePort 30090, Grafana NodePort 30030",
+     "30090 / 30030"
+    ],
+    [
+     true,
+     "Prometheus discovers pods with a read-only Role limited to this namespace",
+     "['get', 'list', 'watch']"
+    ],
+    [
+     true,
+     "Prometheus is ready",
+     "http://192.168.49.2:30090/-/ready -> 200"
+    ],
+    [
+     true,
+     "Grafana is healthy",
+     "Grafana 13.2.5"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_every_service_exposes_metrics",
+   "name": "test_x39_every_service_exposes_metrics",
+   "title": "#39: every ERMS service serves Prometheus metrics at /metrics.",
+   "reqs": [
+    "X39.metrics"
+   ],
+   "outcome": "passed",
+   "duration": 5.75683868200008,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "request-service: GET /metrics -> 200 Prometheus text",
+     "text/plain; version=1.0.0; charset=utf-8"
+    ],
+    [
+     true,
+     "   ... with erms_http_requests_total",
+     "['erms_http_requests_total{method=\"GET\",route=\"/health\",service=\"request-service\",status=\"200\"} 222.0']"
+    ],
+    [
+     true,
+     "   ... with erms_requests_created_total",
+     "['erms_requests_created_total{type=\"rescue\"} 0.0']"
+    ],
+    [
+     true,
+     "   ... with erms_requests_published_total",
+     "['erms_requests_published_total{result=\"ok\",routing_key=\"request.created\"} 79.0']"
+    ],
+    [
+     true,
+     "   /metrics is not part of the documented client API",
+     "hidden from /docs"
+    ],
+    [
+     true,
+     "coordinator: /metrics with the live state of all 6 storage nodes",
+     "['erms_storage_node_up{node=\"storage-shard-0-0\",shard=\"0\"} 1.0', 'erms_storage_node_up{node=\"storage-shard-2-0\",shard=\"2\"} 1.0']"
+    ],
+    [
+     true,
+     "   ... with erms_shard_ready_replicas",
+     "['erms_shard_ready_replicas{shard=\"0\"} 2.0']"
+    ],
+    [
+     true,
+     "   ... with erms_storage_failovers_total",
+     "['erms_storage_failovers_total 1.0']"
+    ],
+    [
+     true,
+     "   ... with erms_storage_node_down_total",
+     "['erms_storage_node_down_total{node=\"storage-shard-0-0\",shard=\"0\"} 0.0']"
+    ],
+    [
+     true,
+     "   ... with erms_storage_degraded_writes_total",
+     "['erms_storage_degraded_writes_total{shard=\"0\"} 0.0']"
+    ],
+    [
+     true,
+     "matching-service: /metrics (called from inside the cluster)",
+     "2 instance(s)"
+    ],
+    [
+     true,
+     "   ... with erms_matches_total",
+     "['erms_matches_total{result=\"matched\",via=\"queue\"} 47.0']"
+    ],
+    [
+     true,
+     "   ... with erms_time_to_match_seconds_bucket",
+     "['erms_time_to_match_seconds_bucket{le=\"0.5\",via=\"queue\"} 0.0']"
+    ],
+    [
+     true,
+     "   ... with erms_messages_consumed_total",
+     "['erms_messages_consumed_total{routing_key=\"request.created\"} 47.0']"
+    ],
+    [
+     true,
+     "   ... with erms_reconciler_fixes_total",
+     "['erms_reconciler_fixes_total{kind=\"orphan_claim\"} 0.0']"
+    ],
+    [
+     true,
+     "storage node storage-shard-0-0: /metrics with its own records and resync metrics",
+     "erms_storage_local_keys{node=\"storage-shard-0-0\",shard=\"0\"} 1223.0"
+    ],
+    [
+     true,
+     "storage node storage-shard-0-1: /metrics with its own records and resync metrics",
+     "erms_storage_local_keys{node=\"storage-shard-0-1\",shard=\"0\"} 1223.0"
+    ],
+    [
+     true,
+     "storage node storage-shard-1-0: /metrics with its own records and resync metrics",
+     "erms_storage_local_keys{node=\"storage-shard-1-0\",shard=\"1\"} 1194.0"
+    ],
+    [
+     true,
+     "storage node storage-shard-1-1: /metrics with its own records and resync metrics",
+     "erms_storage_local_keys{node=\"storage-shard-1-1\",shard=\"1\"} 1194.0"
+    ],
+    [
+     true,
+     "storage node storage-shard-2-0: /metrics with its own records and resync metrics",
+     "erms_storage_local_keys{node=\"storage-shard-2-0\",shard=\"2\"} 1241.0"
+    ],
+    [
+     true,
+     "storage node storage-shard-2-1: /metrics with its own records and resync metrics",
+     "erms_storage_local_keys{node=\"storage-shard-2-1\",shard=\"2\"} 1241.0"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_prometheus_scrapes_every_component",
+   "name": "test_x39_prometheus_scrapes_every_component",
+   "title": "#39: Prometheus scrapes every component and every replica, including RabbitMQ's built-in plugin.",
+   "reqs": [
+    "X39.scrape",
+    "X39.rabbit"
+   ],
+   "outcome": "passed",
+   "duration": 0.6594818969999778,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "job 'coordinator': 1 target(s), all up",
+     "['coordinator-6cd87f5d9b-n48wj']"
+    ],
+    [
+     true,
+     "job 'storage-node': 6 target(s), all up",
+     "['storage-shard-0-0', 'storage-shard-0-1', 'storage-shard-1-0', 'storage-shard-1-1', 'storage-shard-2-0', 'storage-shard-2-1']"
+    ],
+    [
+     true,
+     "job 'request-service': 2 target(s), all up",
+     "['request-service-7f7cf84b97-krfcg', 'request-service-7f7cf84b97-rdjp8']"
+    ],
+    [
+     true,
+     "job 'matching-service': 2 target(s), all up",
+     "['matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+    ],
+    [
+     true,
+     "job 'rabbitmq': 1 target(s), all up",
+     "['rabbitmq']"
+    ],
+    [
+     true,
+     "RabbitMQ plugin: depth of queue matching.requests is collected",
+     "0 waiting"
+    ],
+    [
+     true,
+     "RabbitMQ plugin: its consumer count is collected (= matching pods)",
+     "2.0"
+    ],
+    [
+     true,
+     "the retry queue matching.retry is collected too",
+     "matching.retry"
+    ],
+    [
+     true,
+     "ERMS metric families stored in Prometheus",
+     "61 erms_* metric names"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_grafana_is_provisioned_and_secured",
+   "name": "test_x39_grafana_is_provisioned_and_secured",
+   "title": "#39: Grafana comes up with the Prometheus datasource and the ERMS dashboard, viewable without login.",
+   "reqs": [
+    "X39.grafana",
+    "X39.secure"
+   ],
+   "outcome": "passed",
+   "duration": 1.0770038470002419,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "datasource 'Prometheus' provisioned (http://prometheus:9090)",
+     "['Prometheus']"
+    ],
+    [
+     true,
+     "   and Grafana can reach Prometheus through it",
+     "Successfully queried the Prometheus API."
+    ],
+    [
+     true,
+     "dashboard 'ERMS overview' provisioned in folder 'ERMS'",
+     "['ERMS overview']"
+    ],
+    [
+     true,
+     "it is Grafana's home page (opening Grafana shows it directly)",
+     "/d/default-home-dashboard/erms-overview"
+    ],
+    [
+     true,
+     "anyone can VIEW the dashboard without logging in (anonymous viewer)",
+     "GET without login -> 200"
+    ],
+    [
+     true,
+     "... but nobody can change it without logging in",
+     "POST without login -> 403"
+    ],
+    [
+     true,
+     "the admin login uses the generated password (from .env / Secret grafana-credentials)",
+     "admin / 32-character random password"
+    ],
+    [
+     true,
+     "the default admin/admin is rejected",
+     "admin/admin -> 401"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_dashboard_shows_everything_promised_with_data",
+   "name": "test_x39_dashboard_shows_everything_promised_with_data",
+   "title": "#39: the dashboard has a panel for each promised view (queue depth, time to match, failovers, shard health, node up/down, resync duration, matching pods, API) and every panel query returns data, through Grafana.",
+   "reqs": [
+    "X39.panels",
+    "X39.nodata"
+   ],
+   "outcome": "passed",
+   "duration": 14.769996092000156,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "panel(s) for queue depth",
+     "Queue depth | RabbitMQ queue depth"
+    ],
+    [
+     true,
+     "panel(s) for time from request to match",
+     "Time from request to match"
+    ],
+    [
+     true,
+     "panel(s) for failovers",
+     "Read failovers | Failures (per minute)"
+    ],
+    [
+     true,
+     "panel(s) for shard health",
+     "Healthy shards | Ready replicas per shard"
+    ],
+    [
+     true,
+     "panel(s) for storage node up / down (red / green)",
+     "Storage nodes (green = ready, red = down) | Storage nodes ready"
+    ],
+    [
+     true,
+     "panel(s) for resync duration",
+     "Last resync duration per node"
+    ],
+    [
+     true,
+     "panel(s) for matching pods (autoscaling)",
+     "Matching pods | Autoscaling: matching pods vs queue depth"
+    ],
+    [
+     true,
+     "panel(s) for API rate / latency / errors",
+     "API requests per second, by status | API latency p95, by route"
+    ],
+    [
+     null,
+     "dashboard size",
+     "21 panels in 4 sections, refresh 5 s"
+    ],
+    [
+     true,
+     "all 33 panel queries return data when run through Grafana",
+     "33/33 with data"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_metrics_follow_real_traffic",
+   "name": "test_x39_metrics_follow_real_traffic",
+   "title": "#39: creating and matching requests moves the counters by exactly that much, and time-to-match is right.",
+   "reqs": [
+    "X39.traffic"
+   ],
+   "outcome": "passed",
+   "duration": 8.724813944000289,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "created: +6 after 6 requests",
+     "242 -> 248"
+    ],
+    [
+     true,
+     "published: +6 after 6 requests",
+     "90 -> 96"
+    ],
+    [
+     true,
+     "POST /requests 201: +6 after 6 requests",
+     "242 -> 248"
+    ],
+    [
+     true,
+     "matched via queue: +6 after 6 requests",
+     "50 -> 56"
+    ],
+    [
+     true,
+     "time-to-match samples: +6 after 6 requests",
+     "50 -> 56"
+    ],
+    [
+     true,
+     "the recorded time-to-match equals the real one (created_at -> matched_at of the requests)",
+     "metric average 2.10s, requests' own timestamps 2.06s"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_storage_failure_is_visible_on_the_dashboard",
+   "name": "test_x39_storage_failure_is_visible_on_the_dashboard",
+   "title": "#39 demo moment: stop a storage node -> it turns DOWN (red) on the dashboard and failures are counted; restart it -> READY (green) again, with its resync and resync duration recorded.",
+   "reqs": [
+    "X39.failure"
+   ],
+   "outcome": "passed",
+   "duration": 24.2065721030001,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "before: storage-shard-1-1 shows READY (1, green)",
+     "erms_storage_node_up{node=\"storage-shard-1-1\"} = 1"
+    ],
+    [
+     null,
+     "STOP the storage node",
+     "kubectl -n erms scale statefulset/storage-shard-1 --replicas=1   (stops pod storage-shard-1-1)"
+    ],
+    [
+     true,
+     "during: the dashboard shows storage-shard-1-1 DOWN (0, red)",
+     "12s after the stop"
+    ],
+    [
+     true,
+     "during: 'Grafana -> Prometheus' returns the same (the panel's own query)",
+     "erms_storage_node_up = 0"
+    ],
+    [
+     true,
+     "during: 'Ready replicas per shard' drops to 1 for shard 1",
+     "1 of 2"
+    ],
+    [
+     true,
+     "during: 'Healthy shards' stays 3 (the replica serves the shard)",
+     "3"
+    ],
+    [
+     true,
+     "during: a write with one copy is counted as a degraded write",
+     "1 -> 2"
+    ],
+    [
+     true,
+     "during: the node-down event is counted",
+     "0 -> 1"
+    ],
+    [
+     null,
+     "RESTART the storage node",
+     "kubectl -n erms scale statefulset/storage-shard-1 --replicas=2   (restarts pod storage-shard-1-1)"
+    ],
+    [
+     true,
+     "after: the dashboard shows storage-shard-1-1 READY (1, green) again",
+     "6s after the restart"
+    ],
+    [
+     true,
+     "the node's timeline over the test shows the red stretch (min 0) and ends green (1)",
+     "min over last 51s = 0, now = 1"
+    ],
+    [
+     true,
+     "after: the restarted node's resync is recorded (count, records applied, duration on the dashboard)",
+     "resyncs 1, missed writes applied 1, resync took 259 ms"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x39_killing_the_read_replica_makes_failovers_rise",
+   "name": "test_x39_killing_the_read_replica_makes_failovers_rise",
+   "title": "#39 demo moment, the 'failovers rise' part: kill the storage replica that SERVES a shard's reads while reads keep coming -> reads switch to the other replica, the failover counter on the dashboard rises, the node is counted down, and after its restart it is READY (green) again.",
+   "reqs": [
+    "X39.failure"
+   ],
+   "outcome": "passed",
+   "duration": 8.163445214000149,
+   "reason": "",
+   "checks": [
+    [
+     null,
+     "BEFORE: reads of shard 1 are served by storage-shard-1-0",
+     ""
+    ],
+    [
+     null,
+     "KILL the read replica",
+     "kubectl -n erms delete pod storage-shard-1-0"
+    ],
+    [
+     null,
+     "RESTART",
+     "automatic: the StatefulSet recreates the pod with the same name and volume"
+    ],
+    [
+     true,
+     "reads kept working: none failed while the replica was killed and came back",
+     "21/21 succeeded (100%)"
+    ],
+    [
+     true,
+     "reads switched to the other replica of the shard",
+     "{'storage-shard-1-0': 11, 'storage-shard-1-1': 10}"
+    ],
+    [
+     true,
+     "the dashboard's failover counter ROSE ('Read failovers' / 'Failures (per minute)' panels)",
+     "erms_storage_failovers_total 1 -> 2"
+    ],
+    [
+     true,
+     "   ... the same value through Grafana's own panel query",
+     "sum(erms_storage_failovers_total) = 2"
+    ],
+    [
+     true,
+     "storage-shard-1-0 was counted DOWN (red on the node timeline)",
+     "node-down events 1 -> 2"
+    ],
+    [
+     true,
+     "after: storage-shard-1-0 is READY (green) again on the dashboard",
+     "erms_storage_node_up{node=\"storage-shard-1-0\"} = 1"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x18_keda_is_installed",
+   "name": "test_x18_keda_is_installed",
+   "title": "#18: KEDA's components run in the cluster and serve the external-metrics API used by the HPA.",
+   "reqs": [
+    "X18.install"
+   ],
+   "outcome": "passed",
+   "duration": 0.7375840400002289,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "KEDA operator (keda-operator) is available",
+     "ghcr.io/kedacore/keda:2.21.0"
+    ],
+    [
+     true,
+     "KEDA metrics API server (keda-metrics-apiserver) is available",
+     "ghcr.io/kedacore/keda-metrics-apiserver:2.21.0"
+    ],
+    [
+     true,
+     "KEDA admission webhooks (keda-admission) is available",
+     "ghcr.io/kedacore/keda-admission-webhooks:2.21.0"
+    ],
+    [
+     true,
+     "CRD scaledobjects.keda.sh installed",
+     "scaledobjects.keda.sh"
+    ],
+    [
+     true,
+     "CRD triggerauthentications.keda.sh installed",
+     "triggerauthentications.keda.sh"
+    ],
+    [
+     true,
+     "the external metrics API (queue depth for the HPA) is Available",
+     "True"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x18_scaledobject_hpa_and_credentials",
+   "name": "test_x18_scaledobject_hpa_and_credentials",
+   "title": "#18: the ScaledObject, the HPA KEDA creates from it, and where KEDA's broker credentials come from.",
+   "reqs": [
+    "X18.scaledobject",
+    "X18.hpa",
+    "X18.secret"
+   ],
+   "outcome": "passed",
+   "duration": 1.0228565889999572,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "ScaledObject targets Deployment matching-service",
+     ""
+    ],
+    [
+     true,
+     "between 2 and 6 pods",
+     "min 2, max 6, polling every 5s"
+    ],
+    [
+     true,
+     "trigger: RabbitMQ queue matching.requests, 5 waiting messages per pod",
+     "{'mode': 'QueueLength', 'protocol': 'amqp', 'queueName': 'matching.requests', 'value': '5'}"
+    ],
+    [
+     true,
+     "ScaledObject is Ready and not paused",
+     "{'Ready': 'True', 'Active': 'False', 'Fallback': 'False', 'Paused': 'False', 'HPAActive': 'True'}"
+    ],
+    [
+     true,
+     "KEDA created HPA keda-hpa-matching-service (min 2, max 6) on an external queue metric",
+     "s0-rabbitmq-matching-requests"
+    ],
+    [
+     true,
+     "fast reaction: scale up immediately, scale down after 30 s (instead of the default 5 min)",
+     "0 s / 30 s"
+    ],
+    [
+     true,
+     "no second autoscaler fights over matching-service",
+     "['keda-hpa-matching-service']"
+    ],
+    [
+     true,
+     "the old CPU-based HPA manifest is gone",
+     "k8s/60-hpa-optional.yaml removed"
+    ],
+    [
+     true,
+     "KEDA reads the broker URL from Secret keda-rabbitmq (TriggerAuthentication)",
+     "{'key': 'host', 'name': 'keda-rabbitmq', 'parameter': 'host'}"
+    ],
+    [
+     true,
+     "   the Secret exists (contents not printed)",
+     "112 base64 characters"
+    ],
+    [
+     true,
+     "   no password / amqp URL in the manifest",
+     "k8s/80-keda-autoscaling.yaml"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x18_burst_scales_up_then_back_down",
+   "name": "test_x18_burst_scales_up_then_back_down",
+   "title": "#18 demo moment: 200 requests pile up in RabbitMQ -> KEDA scales matching-service 2 -> 6 by itself, the queue drains, and it scales back to 2; nothing is lost, nothing matched twice, the API stays up.",
+   "reqs": [
+    "X18.up",
+    "X18.down",
+    "X18.safe",
+    "X18.visible"
+   ],
+   "outcome": "passed",
+   "duration": 169.77835578999975,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "before: 2 matching pods, queue empty",
+     "['matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+    ],
+    [
+     true,
+     "200 requests accepted and queued",
+     "in 2.9s"
+    ],
+    [
+     true,
+     "RabbitMQ buffered the burst",
+     "up to 188 messages waiting"
+    ],
+    [
+     true,
+     "KEDA scaled matching-service UP by itself as the queue grew",
+     "HPA asked for more pods 15s after the burst started"
+    ],
+    [
+     true,
+     "... up to the maximum of 6 pods",
+     "6 Ready pods 21s after the burst"
+    ],
+    [
+     null,
+     "timeline (seconds, ready pods, desired)",
+     "[(0, 2, 2), (15, 2, 6), (21, 6, 6), (99, 4, 6), (101, 4, 4), (112, 2, 4), (115, 2, 2)]"
+    ],
+    [
+     true,
+     "the extra pods did real work (requests matched by pods added by KEDA)",
+     "{'matching-service-5675cb9575-xmkvr': 48, 'matching-service-5675cb9575-5gq7g': 44, 'matching-service-5675cb9575-mc9hk': 27, 'matching-service-5675cb9575-d5rhs': 26, 'matching-service-5675cb9575-xs9ss': 27, 'matching-service-5675cb9575-jd9z8': 28}"
+    ],
+    [
+     true,
+     "all 200 requests matched through the queue",
+     "queue drained and all matched 76s after the burst"
+    ],
+    [
+     true,
+     "no request lost or matched twice: capacity exact",
+     "availability 210 -> 10"
+    ],
+    [
+     true,
+     "KEDA scaled matching-service back DOWN to 2 after the queue drained",
+     "2 pods again 144s after the burst (68s after the last match)"
+    ],
+    [
+     true,
+     "the API stayed available the whole time",
+     "239/239 succeeded (100%)"
+    ],
+    [
+     true,
+     "Prometheus recorded the scale-out (dashboard panel 'Autoscaling: matching pods vs queue depth')",
+     "peak matching pods seen by Prometheus: 6"
+    ],
+    [
+     true,
+     "... and the scale-in back to 2",
+     "count(up{job=\"matching-service\"} == 1) = 2"
+    ]
+   ]
+  },
+  {
+   "nodeid": "tests/spec/test_x_extensions.py::test_x18_manual_pin_then_automatic_again",
+   "name": "test_x18_manual_pin_then_automatic_again",
+   "title": "#18: with KEDA in charge a plain `kubectl scale` is undone; scripts/matching-replicas.sh pins the replica count (paused-replicas) and hands it back to KEDA.",
+   "reqs": [
+    "X18.manual"
+   ],
+   "outcome": "passed",
+   "duration": 175.391184758,
+   "reason": "",
+   "checks": [
+    [
+     true,
+     "a plain `kubectl scale --replicas=5` is undone by KEDA's HPA (back to 2 with an empty queue)",
+     "2 pods"
+    ],
+    [
+     true,
+     "matching-replicas.sh 3 pins 3 pods (annotation autoscaling.keda.sh/paused-replicas=3)",
+     "./scripts/matching-replicas.sh 3"
+    ],
+    [
+     true,
+     "the pin holds even with an empty queue (45 s later still 3 pods)",
+     "['matching-service-5675cb9575-2fjgz', 'matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+    ],
+    [
+     true,
+     "matching-replicas.sh auto removes the pin: KEDA scales back to 2 and its HPA is active again",
+     "./scripts/matching-replicas.sh auto"
+    ]
+   ]
+  }
+ ]
+}

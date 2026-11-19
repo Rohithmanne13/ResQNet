@@ -1,0 +1,44 @@
+# Autoscaling of matching-service on RabbitMQ queue depth with KEDA (extension #18).
+# Requires KEDA in the cluster (k8s/deploy.sh installs it). KEDA reads the number of messages waiting in queue
+# matching.requests every 5 s and drives a HorizontalPodAutoscaler (keda-hpa-matching-service):
+#   desired matching pods = ceil(waiting messages / 5), at least 2, at most 6.
+# The broker login comes from Secret keda-rabbitmq (key "host" = amqp URL, built by deploy.sh from
+# rabbitmq-credentials), never from this file.
+#
+# Manual control while KEDA is installed (a plain `kubectl scale` would be undone by the HPA within seconds):
+#   ./scripts/matching-replicas.sh 4      # pin to 4 pods   (annotation autoscaling.keda.sh/paused-replicas=4)
+#   ./scripts/matching-replicas.sh 0      # stop matching   (used by the failure tests)
+#   ./scripts/matching-replicas.sh auto   # back to automatic scaling
+apiVersion: keda.sh/v1alpha1
+kind: TriggerAuthentication
+metadata: { name: rabbitmq-trigger-auth, namespace: erms }
+spec:
+  secretTargetRef:
+    - { parameter: host, name: keda-rabbitmq, key: host }
+---
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata: { name: matching-service, namespace: erms }
+spec:
+  scaleTargetRef: { name: matching-service }     # the Deployment in k8s/40-matching-service.yaml
+  minReplicaCount: 2        # always 2 consumers (availability), as before
+  maxReplicaCount: 6
+  pollingInterval: 5        # seconds between queue-depth checks
+  cooldownPeriod: 30
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:            # react fast to a burst: up to +4 pods every 15 s
+          stabilizationWindowSeconds: 0
+          policies: [{ type: Pods, value: 4, periodSeconds: 15 }]
+        scaleDown:          # shrink 30 s after the queue drained (default would be 5 minutes)
+          stabilizationWindowSeconds: 30
+          policies: [{ type: Pods, value: 2, periodSeconds: 15 }]
+  triggers:
+    - type: rabbitmq
+      metadata:
+        protocol: amqp
+        queueName: matching.requests
+        mode: QueueLength   # target: 5 waiting messages per matching pod
+        value: "5"
+      authenticationRef: { name: rabbitmq-trigger-auth }

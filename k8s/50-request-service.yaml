@@ -5,7 +5,7 @@ spec:
   replicas: 2
   selector: { matchLabels: { app: request-service } }
   template:
-    metadata: { labels: { app: request-service } }
+    metadata: { labels: { app: request-service }, annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8000" } }
     spec:
       containers:
         - name: request-service

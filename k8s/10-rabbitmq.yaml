@@ -33,6 +33,7 @@ spec:
           ports:
             - { name: amqp, containerPort: 5672 }
             - { name: management, containerPort: 15672 }
+            - { name: prometheus, containerPort: 15692 }   # rabbitmq_prometheus plugin (enabled in the image)
           volumeMounts: [{ name: data, mountPath: /var/lib/rabbitmq }]
           readinessProbe:
             exec: { command: ["rabbitmq-diagnostics", "-q", "ping"] }
@@ -55,4 +56,5 @@ spec:
   ports:
     - { name: amqp, port: 5672, targetPort: 5672 }
     - { name: management, port: 15672, targetPort: 15672, nodePort: 30672 }
+    - { name: prometheus, port: 15692, targetPort: 15692 }   # queue depth for Prometheus / Grafana
   type: NodePort

@@ -7,7 +7,8 @@ Prereq: ./k8s/deploy.sh (namespace erms). Then:
 Env: API_URL, COORD_URL, RABBIT_URL (RabbitMQ management; login read from the rabbitmq-credentials Secret),
 K8S_NAMESPACE (default erms),
 KUBECTL (default "kubectl"). The whole module is skipped when kubectl cannot reach the namespace.
-Tests run in file order and put the cluster back the way they found it (2 matching replicas).
+Tests run in file order and put the cluster back the way they found it (matching-service on automatic
+scaling again; scripts/matching-replicas.sh pins / releases the replica count, KEDA-aware).
 """
 import json
 import os
@@ -32,6 +33,15 @@ coord = httpx.Client(base_url=COORD, timeout=10)
 RUN = uuid.uuid4().hex[:6]
 BASE_LAT = -60 + (int(RUN, 16) % 10000) / 100.0   # unique, empty location per run
 BASE_LON = -170 + (int(RUN[:3], 16) % 300)
+
+
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+def matching_replicas(n) -> None:
+    """KEDA-aware: pins matching-service to n pods (paused-replicas), or "auto" hands it back to KEDA."""
+    subprocess.run([os.path.join(ROOT, "scripts", "matching-replicas.sh"), str(n)], check=True,
+                   capture_output=True, text=True, timeout=300, env={**os.environ, "K8S_NAMESPACE": NS})
 
 
 def kubectl(*args, check=True) -> str:
@@ -245,8 +255,7 @@ def test_scale_matching_service_to_4_spreads_work_and_stays_available():
     try:
         # --- continued availability WHILE scaling: requests keep being created and queued
         with Probe(create, interval=0.3) as probe:
-            kubectl("scale", "deploy/matching-service", "--replicas=4")
-            kubectl("rollout", "status", "deploy/matching-service", "--timeout=180s")
+            matching_replicas(4)
             scaled = wait_for(lambda: ready_set(label, 4),
                               timeout=120, desc="4 ready matching pods")
             wait_for(lambda: matching_consumers() == 4, timeout=60, desc="4 consumers on matching.requests")
@@ -274,10 +283,10 @@ def test_scale_matching_service_to_4_spreads_work_and_stays_available():
     finally:
         # --- scale back to 2, still available
         with Probe(health_call) as down_probe:
-            kubectl("scale", "deploy/matching-service", "--replicas=2")
-            kubectl("rollout", "status", "deploy/matching-service", "--timeout=180s")
+            matching_replicas(2)
         print(f"scaled back to 2: /health during scale-in {down_probe.ok}/{down_probe.total} ok")
     wait_for(lambda: len(ready_pod_names(label)) == 2, timeout=120, desc="2 matching pods after scale-in")
+    matching_replicas("auto")        # hand the replica count back to KEDA
     assert down_probe.fail == 0
 
 

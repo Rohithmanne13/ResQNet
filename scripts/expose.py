@@ -11,7 +11,7 @@ import asyncio
 import subprocess
 import sys
 
-PORTS = [30080, 30081, 30672]   # API, coordinator, RabbitMQ UI
+PORTS = [30080, 30081, 30672, 30030, 30090]   # API, coordinator, RabbitMQ UI, Grafana, Prometheus
 
 
 async def pipe(reader, writer):

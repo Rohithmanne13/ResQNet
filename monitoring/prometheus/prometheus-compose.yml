@@ -1,0 +1,35 @@
+# Prometheus scrape configuration for the Docker Compose deployment (mounted by docker-compose.yml).
+# Every ERMS service exposes /metrics on port 8000; RabbitMQ's built-in rabbitmq_prometheus plugin on 15692.
+global:
+  scrape_interval: 5s          # fast enough to watch a storage node go down / come back during a demo
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: coordinator
+    static_configs: [{ targets: ["coordinator:8000"] }]
+    relabel_configs:
+      - { source_labels: [__address__], regex: "([^:]+):.*", target_label: instance }
+
+  - job_name: storage-node
+    static_configs:
+      - targets: [storage-0a:8000, storage-0b:8000, storage-1a:8000, storage-1b:8000, storage-2a:8000, storage-2b:8000]
+    relabel_configs:
+      - { source_labels: [__address__], regex: "([^:]+):.*", target_label: instance }
+
+  # request-service / matching-service can run several replicas behind one DNS name: discover every container
+  - job_name: request-service
+    dns_sd_configs: [{ names: [request-service], type: A, port: 8000, refresh_interval: 5s }]
+
+  - job_name: matching-service
+    dns_sd_configs: [{ names: [matching-service], type: A, port: 8000, refresh_interval: 5s }]
+
+  # Per-queue depth and consumer counts (matching.requests, matching.retry)
+  - job_name: rabbitmq
+    metrics_path: /metrics/detailed
+    params: { family: [queue_coarse_metrics, queue_consumer_count] }
+    static_configs: [{ targets: ["rabbitmq:15692"] }]
+    relabel_configs:
+      - { target_label: instance, replacement: rabbitmq }
+
+  - job_name: prometheus
+    static_configs: [{ targets: ["localhost:9090"] }]

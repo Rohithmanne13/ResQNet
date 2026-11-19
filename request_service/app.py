@@ -13,12 +13,14 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from prometheus_client import Counter
 from pydantic import BaseModel, Field, field_validator
 
 from common import messaging
 from common.logging_setup import setup
+from common.metrics import instrument
 from common.models import (MATCHABLE_REQUEST_STATUSES, REQUEST_STATUSES, REQUEST_TYPES, RESOURCE_KINDS,
                            RESOURCE_STATUSES, TERMINAL_REQUEST_STATUSES, new_resource_id, now_iso, request_key,
                            resource_key, resource_prefix)
@@ -29,6 +31,17 @@ MATCHING_URL = os.getenv("MATCHING_SERVICE_URL", "http://matching-service:8000")
 INSTANCE = os.getenv("HOSTNAME") or socket.gethostname()
 
 log = setup(f"request-{INSTANCE}")
+
+# ----------------------------------------------------------------------------- Prometheus metrics
+REQUESTS_CREATED = Counter("erms_requests_created_total", "Emergency requests created", ["type"])
+PUBLISHED = Counter("erms_requests_published_total", "Requests handed to RabbitMQ", ["routing_key", "result"])
+STATUS_CHANGES = Counter("erms_request_status_changes_total", "Request status updates via the API", ["status"])
+RESOURCES_REGISTERED = Counter("erms_resources_registered_total", "Resources registered", ["type", "kind"])
+for _t in REQUEST_TYPES:
+    REQUESTS_CREATED.labels(_t)
+for _rk in (messaging.RK_CREATED, messaging.RK_REQUEUED):
+    for _res in ("ok", "failed", "broker_down"):
+        PUBLISHED.labels(_rk, _res)
 store = StorageClient()
 broker: dict = {"exchange": None}
 http: httpx.AsyncClient | None = None
@@ -46,15 +59,18 @@ def broker_lost() -> None:
 async def publish(request_id: str, routing_key: str) -> bool:
     if broker["exchange"] is None:
         log.warning("broker not connected; %s not queued", request_id)
+        PUBLISHED.labels(routing_key, "broker_down").inc()
         return False
     try:
         await broker["exchange"].publish(
             messaging.make_message(json.dumps({"request_id": request_id, "attempt": 0}).encode()),
             routing_key=routing_key)
         log.info("published %s to RabbitMQ (%s)", request_id, routing_key)
+        PUBLISHED.labels(routing_key, "ok").inc()
         return True
     except Exception as e:
         log.error("failed to publish %s: %r", request_id, e)
+        PUBLISHED.labels(routing_key, "failed").inc()
         return False
 
 
@@ -70,6 +86,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="ERMS Request Service", lifespan=lifespan)
+instrument(app, "request-service")
 
 
 @app.exception_handler(StorageError)
@@ -196,6 +213,7 @@ async def create_request(body: CreateRequest):
            "created_at": ts, "updated_at": ts, "assigned_resource": None, "match_attempts": 0,
            "history": [{"status": "pending", "at": ts, "by": INSTANCE}]}
     stored = await store.put(request_key(rid), rec, if_version=0)
+    REQUESTS_CREATED.labels(body.type).inc()
     queued = await publish(rid, messaging.RK_CREATED) if body.auto_match else False
     return {**rec, "queued": queued, "_storage": storage_meta(stored)}
 
@@ -246,6 +264,7 @@ async def update_request_status(request_id: str, body: RequestStatusUpdate):
             await store.put(key, req, if_version=item["version"])
         except Conflict:
             continue
+        STATUS_CHANGES.labels(body.status).inc()
         if released:
             await release(store, released, request_id)
         requeued = False
@@ -265,6 +284,7 @@ async def register_resource(body: RegisterResource):
            "status": "available" if body.availability > 0 else "busy", "contact": body.contact,
            "assigned_requests": [], "created_at": ts, "updated_at": ts}
     stored = await store.put(resource_key(rid), rec, if_version=0)
+    RESOURCES_REGISTERED.labels(body.type, body.kind).inc()
     log.info("registered resource %s (%s, capacity %d) on shard %d", rid, body.type, body.availability, stored["shard"])
     return {**rec, "_storage": storage_meta(stored)}
 

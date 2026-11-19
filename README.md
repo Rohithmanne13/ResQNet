@@ -29,12 +29,14 @@ over RabbitMQ, Docker and Kubernetes.
 | **coordinator** (exactly 1) | Node registry (register + heartbeat), failure detection, routes every storage operation to the right shard and its replicas. Clients never know where data lives. |
 | **storage nodes** (3 shards × 2 replicas) | Versioned key/value store on SQLite (persistent volume each). Heartbeat to the coordinator; resync from peers after (re)joining. |
 | **RabbitMQ** | Asynchronous hand-off between request processing and matching. Durable queues + persistent messages on a persistent volume; credentials from a Secret / `.env`. |
+| **Prometheus + Grafana** (extension) | Every service exposes `/metrics`; Prometheus scrapes them every 5 s (plus RabbitMQ's built-in plugin); Grafana shows the live "ERMS overview" dashboard. See [Monitoring](#monitoring-prometheus--grafana). |
+| **KEDA** (extension, Kubernetes) | Scales matching-service automatically (2–6 pods) on the number of messages waiting in RabbitMQ. See [Autoscaling](#autoscaling-on-queue-depth-keda). |
 
 ## Quick start (Docker Compose)
 
 ```bash
-./scripts/init-env.sh                   # once: .env with a random RabbitMQ password (git-ignored)
-docker compose up -d --build            # 12 containers
+./scripts/init-env.sh                   # once: .env with random RabbitMQ / Grafana passwords (git-ignored)
+docker compose up -d --build            # 13 containers (11 application + Prometheus + Grafana)
 open http://localhost:8080/docs         # Swagger UI of the client API
 ./scripts/demo.sh                       # guided walkthrough of every required demonstration (AUTO=1 = no pauses)
 ```
@@ -44,6 +46,8 @@ open http://localhost:8080/docs         # Swagger UI of the client API
 | http://localhost:8080 | client API (request-service) — `/docs` for Swagger |
 | http://localhost:8001/cluster | coordinator: shards, nodes, status, key counts, read stats |
 | http://localhost:15672 | RabbitMQ management (user `erms`, password: `COMPOSE=1 ./scripts/rabbit-password.sh`) |
+| http://localhost:3000 | Grafana, dashboard "ERMS overview" (no login needed to view; admin password: `COMPOSE=1 ./scripts/grafana-password.sh`) |
+| http://localhost:9090 | Prometheus (targets: Status → Targets) |
 
 ## Kubernetes
 
@@ -51,14 +55,15 @@ Works with minikube, kind or Docker Desktop Kubernetes.
 
 ```bash
 minikube start --driver=docker --cpus=4 --memory=4096
-minikube addons enable metrics-server                       # only needed for the optional HPA
-./k8s/deploy.sh                                             # builds images, loads them into the cluster, applies manifests
+./k8s/deploy.sh                                             # builds images, installs KEDA, applies manifests (incl. monitoring)
 ./scripts/k8s-demo.sh                                       # pod recovery, scaling, storage failure on k8s
+./scripts/keda-demo.sh                                      # 200 requests -> matching-service autoscales 2 -> 6 -> 2
 python3 scripts/expose.py                                   # WSL2: open the NodePorts in the Windows browser as http://localhost:30080/docs etc.
 ```
 
 On minikube the services are exposed as NodePorts on `$(minikube ip)`: API `:30080` (`/docs`), coordinator
-`:30081/cluster`, RabbitMQ UI `:30672` (user `erms`, password: `./scripts/rabbit-password.sh`). NodePorts keep working while pods are killed and replaced; `kubectl port-forward`
+`:30081/cluster`, RabbitMQ UI `:30672` (user `erms`, password: `./scripts/rabbit-password.sh`), Grafana `:30030`
+(no login to view; admin password: `./scripts/grafana-password.sh`), Prometheus `:30090`. NodePorts keep working while pods are killed and replaced; `kubectl port-forward`
 does not (it binds to one pod). On kind / Docker Desktop use `kubectl -n erms port-forward svc/request-service 8080:8000` etc.
 
 | Manifest | Objects |
@@ -66,9 +71,15 @@ does not (it binds to one pod). On kind / Docker Desktop use `kubectl -n erms po
 | `k8s/10-rabbitmq.yaml` | StatefulSet (1 replica, persistent volume) + headless Service + NodePort Service (30672); credentials from Secret `rabbitmq-credentials` (created by `deploy.sh`) |
 | `k8s/20-coordinator.yaml` | Deployment (replicas: 1, Recreate) + NodePort Service (30081) |
 | `k8s/30-storage.yaml` | 3 StatefulSets `storage-shard-{0,1,2}` × 2 pods, one persistent volume (PVC) per pod + headless Services |
-| `k8s/40-matching-service.yaml` | Deployment (2 replicas) + Service |
+| `k8s/40-matching-service.yaml` | Deployment (2 replicas; 2–6 when KEDA is installed) + Service |
 | `k8s/50-request-service.yaml` | Deployment (2 replicas) + NodePort Service (30080) |
-| `k8s/60-hpa-optional.yaml` | optional HPA for matching-service (needs metrics-server) |
+| `k8s/70-monitoring.yaml` | Prometheus (Deployment, ServiceAccount + read-only Role for pod discovery, NodePort 30090) and Grafana (Deployment, NodePort 30030); config from ConfigMaps built by `deploy.sh` out of `monitoring/` |
+| `k8s/80-keda-autoscaling.yaml` | KEDA `ScaledObject` (matching-service on queue `matching.requests`, 2–6 pods) + `TriggerAuthentication` (broker URL from Secret `keda-rabbitmq`) |
+
+All application pods carry `prometheus.io/scrape` annotations, so Prometheus finds pods created by scaling or recovery
+within seconds. `deploy.sh` installs KEDA v2.21.0 once (namespace `keda`); `SKIP_KEDA=1 ./k8s/deploy.sh` deploys
+without it (matching-service then stays at 2 pods). The former CPU-based HPA (`60-hpa-optional.yaml`) was removed: two
+autoscalers on one Deployment fight each other.
 
 All pods have readiness/liveness probes on `/health`. Storage pods take their identity from the downward
 API (`NODE_ID` = pod name, `NODE_URL` = pod IP), so a recreated pod re-registers with its new IP.
@@ -76,12 +87,59 @@ API (`NODE_ID` = pod name, `NODE_URL` = pod IP), so a recreated pod re-registers
 Useful commands for the demo:
 ```bash
 kubectl -n erms delete pod -l app=request-service --wait=false   # automatic recovery
-kubectl -n erms scale deploy/matching-service --replicas=4       # scaling
+./scripts/matching-replicas.sh 4                                # scaling (pins 4 pods; KEDA-aware)
+./scripts/matching-replicas.sh auto                             # back to automatic scaling on queue depth
 kubectl -n erms scale sts/storage-shard-1 --replicas=1           # storage node failure (removes storage-shard-1-1)
 kubectl -n erms scale sts/storage-shard-1 --replicas=2           # recovery: pod reattaches its volume, catches up from peer
 kubectl -n erms delete pod storage-shard-0-0                     # also works: recreated with the same volume, catches up
 kubectl -n erms delete pod -l app=coordinator                    # coordinator restart: replicas wait for each other, merge
 ```
+
+## Monitoring (Prometheus + Grafana)
+
+Extension #39. Runs in both deployments: Compose (Grafana http://localhost:3000, Prometheus :9090) and Kubernetes
+(NodePorts 30030 / 30090). Open Grafana and the **ERMS overview** dashboard is the home page; viewing needs no login.
+
+| Dashboard section | Panels |
+|---|---|
+| Cluster health | healthy shards, storage nodes ready, matching pods, API pods, queue depth, read failovers; **storage node timeline** (green = ready, red = down); ready replicas per shard |
+| Messaging and autoscaling | RabbitMQ queue depth (waiting / being processed / delayed retry); **matching pods vs queue depth** (KEDA); matches per second by pod; requests created vs matched |
+| Latency and API | **time from request to match** (p50 / p95); API requests per second by HTTP status; API latency p95 by route; storage reads / writes per second |
+| Storage failures and recovery | failovers, nodes marked down, degraded writes per minute; **last resync duration per node**; records per node; resyncs and missed writes applied; reconciler / sweeper fixes |
+
+Metrics (all on `/metrics`, Prometheus text format):
+
+| Service | Metrics |
+|---|---|
+| every service | `erms_http_requests_total{route,method,status}`, `erms_http_request_duration_seconds` (route = template, e.g. `/requests/{request_id}`) |
+| request-service | `erms_requests_created_total{type}`, `erms_requests_published_total{result}`, `erms_request_status_changes_total`, `erms_resources_registered_total` |
+| matching-service | `erms_matches_total{result,via}`, `erms_time_to_match_seconds` (creation → assignment), `erms_messages_consumed_total`, `erms_match_retries_total`, `erms_messages_inflight`, `erms_reconciler_fixes_total`, `erms_sweeper_requeued_total` |
+| coordinator | `erms_storage_node_up{node,shard}`, `erms_storage_node_status`, `erms_shard_ready_replicas`, `erms_shard_healthy`, `erms_storage_node_keys`, `erms_storage_failovers_total`, `erms_storage_node_down_total`, `erms_storage_degraded_writes_total`, `erms_storage_reads_total`, `erms_storage_writes_total` |
+| storage node | `erms_storage_sync_duration_seconds`, `erms_storage_last_sync_duration_seconds`, `erms_storage_syncs_total{result}`, `erms_storage_sync_records_applied_total`, `erms_storage_local_keys` |
+| RabbitMQ | built-in `rabbitmq_prometheus` plugin: `rabbitmq_detailed_queue_messages_ready / _unacked / _consumers{queue}` |
+
+The dashboard JSON is generated by `monitoring/grafana/build_dashboard.py`; edit the panels there and re-run it.
+The test suite runs every panel query through Grafana and fails if any would show "No data".
+
+## Autoscaling on queue depth (KEDA)
+
+Extension #18, Kubernetes. KEDA checks the number of messages waiting in `matching.requests` every 5 s and drives a
+HorizontalPodAutoscaler: **desired matching pods = ceil(waiting / 5)**, between 2 and 6. Scale-up is immediate; scale-down
+waits 30 s after the queue drained (instead of the default 5 minutes), so a demo burst shows both directions.
+
+```bash
+./scripts/keda-demo.sh               # 200 requests: live table of queue depth / ready pods / desired pods, then summary
+kubectl -n erms get scaledobject,hpa # the ScaledObject and the HPA KEDA created (keda-hpa-matching-service)
+./scripts/matching-replicas.sh 4     # pin 4 pods (KEDA annotation autoscaling.keda.sh/paused-replicas=4)
+./scripts/matching-replicas.sh 0     # stop matching completely (failure tests)
+./scripts/matching-replicas.sh auto  # automatic again
+```
+
+A plain `kubectl scale deploy/matching-service` no longer sticks: KEDA's HPA owns the replica count and corrects it
+within seconds (tested). KEDA connects to RabbitMQ with an amqp URL kept in Secret `keda-rabbitmq` (built by
+`deploy.sh` from `rabbitmq-credentials`). Removing a pod is safe: matching workers finish their in-flight messages
+on SIGTERM (graceful drain), so scale-down loses nothing (tested with 200 requests: all matched, capacity exact).
+Docker Compose has no autoscaler; there the replica count is fixed (`deploy.replicas`).
 
 ## Client REST API
 
@@ -183,12 +241,21 @@ Coordinator (used by the services) and storage nodes (used by the coordinator) e
   | Broker restart / pod deletion loses queued messages | RabbitMQ on a persistent volume with a stable node name (StatefulSet / fixed hostname); durable queues, persistent messages, publisher confirms. The sweeper remains as a second safety net | `test_queued_requests_survive_broker_restart_…`, `test_broker_outage_requests_are_not_lost` |
   | `unmatched` requests stayed unmatched even after a suitable resource appeared | The sweeper revives them as soon as a candidate exists | `test_unmatched_request_is_revived_when_a_resource_appears` |
   | Matching pod stopped mid-message (scale-in, deletion) | Graceful shutdown: cancel the consumer, finish in-flight messages (`SHUTDOWN_GRACE`), then exit | `test_scale_matching_service_to_4_…` (capacity exact after scale-in) |
+  | Simultaneous `POST /match` calls competing for one resource were refused ("no suitable resource", 409) while units were still free: the claim gave up after 4 compare-and-set conflicts | A conflict only means another matcher got there first: re-read and retry with a short random back-off until it succeeds or capacity runs out (claim and release) | `test_contended_matches_never_report_false_no_capacity` (unit), `test_simultaneous_requests_never_double_assign` (spec) |
+  | Simultaneous `POST /match` calls of the **same** request: a losing call released the unit the winner had just committed with (request `matched`, resource no longer listing it) | On a conflict the unit is released only if the request is not now using it; after committing, the matcher confirms it still holds the unit | `test_concurrent_matches_of_the_same_request_keep_its_unit` (unit), `test_simultaneous_requests_never_double_assign` (spec) |
+  | Docker / host restart (e.g. WSL reboot): RabbitMQ was the only Compose service without a restart policy, so the system came back without a broker | `restart: unless-stopped` on RabbitMQ too (every Compose service now restarts by itself; Kubernetes StatefulSets always did) | tested by killing RabbitMQ inside its container: restarted in 2 s, services reconnected |
   | Ids pasted with spaces; oversized text fields | Ids trimmed; length limits on text fields | `test_create_and_get_request`, `test_match_proxy_unreachable_is_503_and_ids_are_trimmed` |
 
 * **Microservice boundaries:** client API / matching / storage coordination are separate so the stateless parts scale
   independently of the stateful storage tier.
-* **Monitoring / logging:** structured log lines per service (`NODE DOWN`, `SYNC complete`, `MATCHED`, …), `/cluster`
-  (node states, key counts per replica, read distribution, failovers), `/stats` on matching workers, RabbitMQ management UI.
+* **Monitoring / logging:** metrics in Prometheus format on `/metrics` of every service, scraped by Prometheus every 5 s
+  and shown on a provisioned Grafana dashboard (see [Monitoring](#monitoring-prometheus--grafana)). Metrics are pull-based,
+  so a crashed service simply shows as a down target, and Kubernetes pod discovery picks up new pods automatically.
+  Plus structured log lines per service (`NODE DOWN`, `SYNC complete`, `MATCHED`, …), `/cluster` (node states, key
+  counts per replica, read distribution, failovers), `/stats` on matching workers and the RabbitMQ management UI.
+* **Autoscaling:** KEDA scales matching-service on RabbitMQ queue depth instead of CPU. A matching worker spends most of
+  its time waiting on I/O, so CPU says little about the backlog; messages waiting per pod measure it directly (see
+  [Autoscaling](#autoscaling-on-queue-depth-keda)).
 
 Main tunables (env vars): `HEARTBEAT_INTERVAL`, `HEARTBEAT_TIMEOUT`, `REPLICAS_PER_SHARD`, `BOOTSTRAP_GRACE`,
 `MAX_MATCH_DISTANCE_KM`, `RETRY_DELAY_MS`, `MAX_MATCH_ATTEMPTS`, `PREFETCH`, `STALE_PENDING_SECONDS`, `SWEEP_INTERVAL`,
@@ -199,7 +266,7 @@ per match, set to 1.5 s in the deployments so queueing is visible in the demo; s
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt pytest pyyaml
-.venv/bin/python -m pytest tests/unit                 # logic + edge cases, no Docker needed (25 tests, ~3 s)
+.venv/bin/python -m pytest tests/unit                 # logic, edge cases, metrics; no Docker needed (34 tests, ~10 s)
 ./scripts/init-env.sh && docker compose up -d --build
 .venv/bin/python -m pytest -v tests/integration       # end-to-end incl. node/broker/coordinator failures (~4 min)
 ```
@@ -215,8 +282,8 @@ START_CMD="kubectl -n erms scale sts {statefulset} --replicas=2" \
 BROKER_STOP_CMD="kubectl -n erms scale sts rabbitmq --replicas=0" \
 BROKER_START_CMD="kubectl -n erms scale sts rabbitmq --replicas=1" \
 BROKER_RESTART_CMD="kubectl -n erms delete pod rabbitmq-0" \
-MATCHING_STOP_CMD="kubectl -n erms scale deploy matching-service --replicas=0" \
-MATCHING_START_CMD="kubectl -n erms scale deploy matching-service --replicas=2" \
+MATCHING_STOP_CMD="./scripts/matching-replicas.sh 0" \
+MATCHING_START_CMD="./scripts/matching-replicas.sh auto" \
 .venv/bin/python -m pytest -v tests/integration      # 18 pass; the precise stale-replica test is Compose-only
 
 # Kubernetes-only tests: pod deletion & recovery, scaling with continued availability, Secret credentials,
@@ -237,6 +304,24 @@ MATCHING_START_CMD="kubectl -n erms scale deploy matching-service --replicas=2" 
 | edge cases (see *Edge cases handled*) | `tests/unit/test_edge_cases.py`, `test_capacity_leak_is_reconciled`, `test_lost_claim_is_reconciled`, `test_unmatched_request_is_revived_…`, `test_queued_requests_survive_broker_restart_…`, `test_coordinator_restart_never_serves_a_stale_replica`, k8s tests below |
 | k8s pod recovery & scaling | `tests/k8s/test_k8s.py`: `test_request_service_pod_deleted_is_recreated_and_api_keeps_answering`, `test_storage_pod_deleted_fails_over_then_resyncs`, `test_scale_matching_service_to_4_spreads_work_and_stays_available` (also shown in `scripts/k8s-demo.sh`) |
 
+### Specification-compliance suite (every requirement of the PDF)
+
+`tests/spec` checks **every mandatory requirement of "Emergency Response Matching.pdf"** against the running system.
+`tests/spec/requirements.py` lists 104 numbered requirements (§1–§12). Each test is tagged with the ids it proves,
+and a requirement that no test covers is reported as **NOT COVERED**. Every assertion records what was checked and
+the value that was observed. At the end the suite prints a report: every check of every test (✔ / ✘), then the
+whole PDF requirement by requirement with its verdict.
+
+```bash
+./scripts/spec-test.sh compose      # Docker Compose   (~3 min; stops/restarts storage nodes, matching, a whole shard)
+./scripts/spec-test.sh k8s          # Kubernetes       (~11 min; also deletes and scales pods, KEDA burst test)
+.venv/bin/python tests/spec/report.py   # merge both runs -> tests/spec/reports/spec-report-combined.md
+```
+Kubernetes-only requirements show as SKIP in the Compose run; the merged report combines both runs. Reports are
+saved to `tests/spec/reports/spec-<target>.{json,md}`. The two extensions are tested by the same harness
+(`tests/spec/test_x_extensions.py`, requirements `X39.*` / `X18.*`) and reported in their own sections; run only them
+with `./scripts/spec-test.sh k8s -k "x39 or x18"`.
+
 ## Required demonstration → where
 
 | Demo item (§10) | `scripts/demo.sh` step |
@@ -249,6 +334,8 @@ MATCHING_START_CMD="kubectl -n erms scale deploy matching-service --replicas=2" 
 | Storage failure | 6 (`docker compose stop storage-Xa`; reads fail over, writes continue) |
 | Node recovery | 7 (`start`; log shows `SYNC complete … applied N updates`) |
 | Kubernetes recovery & scaling | `scripts/k8s-demo.sh` (pod deletion; scaling 2 -> 4 -> 2 with a live availability probe; storage-shard-1 scale-down and `kubectl delete pod`, each with before / during / after reads) |
+| Autoscaling (extension) | `scripts/keda-demo.sh` (200 requests: matching-service 2 -> 6 -> 2 by itself, live table of queue depth and pods) |
+| Monitoring (extension) | Grafana "ERMS overview" during any of the demos: nodes turn red / green, queue depth, matching pods, time to match |
 
 ## Layout
 
@@ -258,7 +345,9 @@ coordinator/       coordinator service + Dockerfile
 storage_node/      storage node service + Dockerfile
 request_service/   client API + Dockerfile
 matching_service/  matcher + consumer + reconciler + Dockerfile
-k8s/               manifests + deploy.sh
-scripts/           demo.sh, k8s-demo.sh, init-env.sh, rabbit-password.sh, expose.py
-tests/             unit/, integration/ and k8s/
+k8s/               manifests + deploy.sh (incl. monitoring 70-, KEDA 80-)
+monitoring/        prometheus/ scrape configs (Compose, Kubernetes); grafana/ provisioning, dashboards, build_dashboard.py
+scripts/           demo.sh, k8s-demo.sh, keda-demo.sh, matching-replicas.sh, spec-test.sh, init-env.sh,
+                   rabbit-password.sh, grafana-password.sh, expose.py
+tests/             unit/, integration/, k8s/ and spec/ (PDF requirements + extensions, with report)
 ```

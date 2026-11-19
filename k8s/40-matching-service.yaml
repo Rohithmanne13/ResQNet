@@ -5,7 +5,7 @@ spec:
   replicas: 2
   selector: { matchLabels: { app: matching-service } }
   template:
-    metadata: { labels: { app: matching-service } }
+    metadata: { labels: { app: matching-service }, annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8000" } }
     spec:
       terminationGracePeriodSeconds: 30   # finish in-flight messages before exit (see SHUTDOWN_GRACE)
       containers:

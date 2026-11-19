@@ -23,10 +23,12 @@ from fastapi import FastAPI, HTTPException
 
 from common import messaging
 from common.logging_setup import setup
+from common.metrics import instrument
 from common.models import TERMINAL_REQUEST_STATUSES, now_iso, resource_prefix
 from common.storage_client import Conflict, StorageClient, StorageError
 
 from .matcher import WORKER_ID, match_request, rank_candidates, record_attempt
+from .metrics import BROKER_UP, GAVE_UP, INFLIGHT, MESSAGES, RECONCILED, RETRIES, SWEPT
 from .reconciler import Reconciler
 
 PREFETCH = int(os.getenv("PREFETCH", "2"))
@@ -51,10 +53,12 @@ async def handle(message: aio_pika.abc.AbstractIncomingMessage) -> None:
         await message.reject(requeue=True)   # shutting down: hand it back to another replica
         return
     inflight["n"] += 1
+    INFLIGHT.inc()
     try:
         await _handle(message)
     finally:
         inflight["n"] -= 1
+        INFLIGHT.dec()
 
 
 async def _handle(message: aio_pika.abc.AbstractIncomingMessage) -> None:
@@ -67,6 +71,7 @@ async def _handle(message: aio_pika.abc.AbstractIncomingMessage) -> None:
         return
 
     counters["consumed"] += 1
+    MESSAGES.labels(message.routing_key or "unknown").inc()
     log.info("consumed %s (routing=%s attempt=%d)", request_id, message.routing_key, attempt)
     if MATCH_DELAY_MS:
         await asyncio.sleep(MATCH_DELAY_MS / 1000)
@@ -91,9 +96,11 @@ async def _handle(message: aio_pika.abc.AbstractIncomingMessage) -> None:
         await record_attempt(store, request_id, next_attempt, give_up, reason)
         if give_up:
             counters["gave_up"] += 1
+            GAVE_UP.inc()
             log.warning("giving up auto-matching %s after %d attempts (%s)", request_id, next_attempt, reason)
         else:
             counters["retried"] += 1
+            RETRIES.inc()
             await broker["retry_exchange"].publish(
                 messaging.make_message(json.dumps({"request_id": request_id, "attempt": next_attempt}).encode()),
                 routing_key=messaging.RK_RETRY)
@@ -108,10 +115,12 @@ async def broker_setup(channel) -> None:
     broker["retry_exchange"] = await messaging.declare_retry(channel, RETRY_DELAY_MS)
     broker["queue"], broker["consumer_tag"] = queue, await queue.consume(handle)
     broker["connected"] = True
+    BROKER_UP.set(1)
     log.info("consuming from '%s' (prefetch=%d)", messaging.QUEUE, PREFETCH)
 
 
 def broker_lost() -> None:
+    BROKER_UP.set(0)
     broker.update(connected=False, exchange=None, retry_exchange=None, queue=None, consumer_tag=None)
 
 
@@ -176,6 +185,7 @@ async def sweep_once() -> None:
             continue
         await requeue(req["id"], req.get("match_attempts", 0))
         counters["swept" if "stale" in why else "revived_unmatched"] += 1
+        SWEPT.labels("stale_pending" if "stale" in why else "revived_unmatched").inc()
         log.warning("sweeper: re-queued %s: %s", req["id"], why)
 
 
@@ -187,6 +197,7 @@ async def reconcile_loop() -> None:
             result = await reconciler.run_once()
             for kind, *_ in result["fixed"]:
                 counters[f"reconciled_{kind}"] += 1
+                RECONCILED.labels(kind).inc()
         except Exception as e:
             log.warning("reconciler failed: %r", e)
 
@@ -217,6 +228,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="ERMS Matching Service", lifespan=lifespan)
+instrument(app, "matching-service")
 
 
 @app.post("/match/{request_id}")

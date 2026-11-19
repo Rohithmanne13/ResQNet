@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
-# Create .env (git-ignored) with RabbitMQ credentials for Docker Compose. Keeps an existing .env.
+# Create / complete .env (git-ignored) with the secrets Docker Compose needs: RabbitMQ credentials and the
+# Grafana admin password. Existing values are kept; only missing ones are generated (safe to run again).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-if [ -f .env ]; then echo ".env already exists (RabbitMQ user: $(grep '^RABBITMQ_USER=' .env | cut -d= -f2))"; exit 0; fi
 umask 077
-printf 'RABBITMQ_USER=erms\nRABBITMQ_PASSWORD=%s\n' "$(python3 -c 'import secrets; print(secrets.token_hex(16))')" > .env
-echo "wrote .env with a random RabbitMQ password (user: erms)"
+touch .env
+gen() { python3 -c 'import secrets; print(secrets.token_hex(16))'; }
+add() {   # add KEY=VALUE unless KEY is already set
+  if ! grep -q "^$1=" .env; then echo "$1=$2" >> .env; echo "  added $1"; fi
+}
+add RABBITMQ_USER erms
+add RABBITMQ_PASSWORD "$(gen)"
+add GRAFANA_ADMIN_PASSWORD "$(gen)"
+echo ".env ready (RabbitMQ user: $(grep '^RABBITMQ_USER=' .env | cut -d= -f2); Grafana user: admin)"

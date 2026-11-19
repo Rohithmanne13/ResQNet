@@ -1,0 +1,13 @@
+# Grafana datasource, provisioned at start-up (same file for Compose and Kubernetes: Prometheus is reachable
+# as http://prometheus:9090 in both).
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      timeInterval: 5s

@@ -37,12 +37,12 @@ for i in $(seq 1 60); do [ "$(curl -s "$COORD/health" | python3 -c 'import json,
 cluster_table; pause
 
 step "Scaling: matching-service 2 -> 4 replicas while traffic keeps flowing"
+info "manual scaling (KEDA-aware: pins the replica count; automatic scaling on queue depth: ./scripts/keda-demo.sh)"
 post /resources '{"type":"rescue","name":"Rescue boats","location":{"lat":12.9,"lon":77.6},"availability":200}' >/dev/null
 RESCUE='{"type":"rescue","location":{"lat":12.9,"lon":77.6}}'
 info "background probe: GET /health + POST /requests every 0.3 s, running DURING kubectl scale"
 probe_start "$RESCUE"
-$K scale deploy/matching-service --replicas=4
-$K rollout status deploy/matching-service --timeout=120s
+./scripts/matching-replicas.sh 4
 for i in $(seq 1 30); do   # until all 4 pods' consumers are attached to matching.requests
   [ "$(curl -s -u "$RABBIT_USER:$RABBIT_PASS" "$RABBIT/api/queues/%2F/matching.requests" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("consumers"))' 2>/dev/null)" = 4 ] && break; sleep 1
 done
@@ -63,10 +63,10 @@ info "work was spread across the scaled-out matching pods"; pause
 
 step "Scaling back: matching-service 4 -> 2 replicas, still available"
 probe_start "$RESCUE"
-$K scale deploy/matching-service --replicas=2
-$K rollout status deploy/matching-service --timeout=120s
+./scripts/matching-replicas.sh 2
 sleep 2
 probe_stop
+./scripts/matching-replicas.sh auto >/dev/null   # hand the replica count back to KEDA
 $K get pods -l app=matching-service; pause
 
 SHARD1_REQ='{"type":"water","location":{"lat":13,"lon":77.6},"auto_match":false}'
@@ -118,3 +118,10 @@ $K logs storage-shard-1-0 | grep -E "SYNC|registered" | tail -3
 info "after: storage-shard-1-0 serves reads again, including the update and the write it missed"
 get "/requests/$DEL_ID" | show request
 get "/requests/$DEL_DURING_ID" | show request
+
+step "Monitoring: everything above is on the Grafana dashboard"
+IP=$(minikube ip 2>/dev/null || echo localhost)
+info "Grafana:    http://$IP:30030  (dashboard 'ERMS overview': node up/down timeline, failovers, resync time,"
+info "            queue depth, matching pods, time to match, API rate/latency; no login needed)"
+info "Prometheus: http://$IP:30090   (WSL2 -> Windows browser: python3 scripts/expose.py, then http://localhost:30030)"
+info "Autoscaling on queue depth (KEDA) demo: ./scripts/keda-demo.sh"

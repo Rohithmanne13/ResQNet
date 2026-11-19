@@ -29,8 +29,12 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
 
+from prometheus_client import REGISTRY, Counter
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
+
 from common.hashing import NUM_SHARDS, shard_for
 from common.logging_setup import setup
+from common.metrics import instrument
 
 HEARTBEAT_TIMEOUT = float(os.getenv("HEARTBEAT_TIMEOUT", "6"))
 NODE_TIMEOUT = float(os.getenv("NODE_REQUEST_TIMEOUT", "2"))
@@ -64,6 +68,48 @@ shard_wait_since: dict[int, float] = {}
 http: httpx.AsyncClient | None = None
 stats = {"reads": 0, "writes": 0, "failovers": 0, "read_by_node": defaultdict(int)}
 
+# ----------------------------------------------------------------------------- Prometheus metrics
+NODE_DOWN = Counter("erms_storage_node_down_total", "Times a storage node was marked down", ["node", "shard"])
+DEGRADED_WRITES = Counter("erms_storage_degraded_writes_total",
+                          "Writes acknowledged by fewer replicas than the shard has", ["shard"])
+for _s in range(NUM_SHARDS):
+    DEGRADED_WRITES.labels(str(_s))
+
+
+class ClusterCollector:
+    """Exports the coordinator's live view of the storage layer at scrape time (always exact, no copies)."""
+
+    def collect(self):
+        now = time.time()
+        up = GaugeMetricFamily("erms_storage_node_up", "1 = node is ready and serves reads, 0 = not", labels=["node", "shard"])
+        state = GaugeMetricFamily("erms_storage_node_status", "Current node status (1 for the active one)",
+                                  labels=["node", "shard", "status"])
+        keys = GaugeMetricFamily("erms_storage_node_keys", "Records stored on the node", labels=["node", "shard"])
+        age = GaugeMetricFamily("erms_storage_node_heartbeat_age_seconds", "Seconds since the last heartbeat",
+                                labels=["node", "shard"])
+        for n in nodes.values():
+            lbl = [n.node_id, str(n.shard_id)]
+            up.add_metric(lbl, 1.0 if n.status == READY else 0.0)
+            for st in ALL_STATUSES:
+                state.add_metric(lbl + [st], 1.0 if n.status == st else 0.0)
+            keys.add_metric(lbl, n.key_count)
+            age.add_metric(lbl, round(now - n.last_heartbeat, 3))
+        ready = GaugeMetricFamily("erms_shard_ready_replicas", "Ready replicas per shard", labels=["shard"])
+        healthy = GaugeMetricFamily("erms_shard_healthy", "1 = shard has a ready replica", labels=["shard"])
+        for s in range(NUM_SHARDS):
+            r = len(shard_nodes(s, (READY,)))
+            ready.add_metric([str(s)], r)
+            healthy.add_metric([str(s)], 1.0 if r else 0.0)
+        yield from (up, state, keys, age, ready, healthy)
+        reads = CounterMetricFamily("erms_storage_reads", "Reads served, by node", labels=["node"])
+        for node in sorted(set(nodes) | set(stats["read_by_node"])):
+            reads.add_metric([node], stats["read_by_node"].get(node, 0))
+        yield reads
+        yield CounterMetricFamily("erms_storage_writes", "Replicated writes", value=stats["writes"])
+        yield CounterMetricFamily("erms_storage_failovers", "Reads that had to fail over to another replica",
+                                  value=stats["failovers"])
+
+
 
 def next_version() -> int:
     """Monotonic version: wall-clock ns, but never repeats or goes backwards (also across
@@ -91,6 +137,7 @@ def ready_peers(shard: int, exclude: str) -> list[str]:
 def mark_down(node: Node, reason: str) -> None:
     if node.status != DOWN:
         log.warning("NODE DOWN: %s (shard %d) - %s", node.node_id, node.shard_id, reason)
+        NODE_DOWN.labels(node.node_id, str(node.shard_id)).inc()
         node.status = DOWN
         node.down_since = time.time()
         node.down_reason = reason
@@ -155,6 +202,8 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="ERMS Storage Coordinator", lifespan=lifespan)
+instrument(app, "coordinator")
+REGISTRY.register(ClusterCollector())   # after shard_nodes() etc. exist: registering calls collect() once
 
 
 # --------------------------------------------------------------------------- node management
@@ -175,6 +224,7 @@ def register(info: NodeInfo):
     prev = nodes.get(info.node_id)
     node = Node(info.node_id, info.shard_id, info.url, WAITING, key_count=info.key_count)
     nodes[info.node_id] = node
+    NODE_DOWN.labels(info.node_id, str(info.shard_id))      # series exists (at 0) before the first failure
     reply = admit(node)
     if node.status == WAITING:
         resolve_waiting()                 # last replica of the shard back? start the merge right away
@@ -284,8 +334,10 @@ async def put_data(key: str, body: PutBody, if_version: int | None = Query(None)
                 raise HTTPException(409, {"message": "version conflict", "current_version": current_version})
         version = next_version()
         acked = await replicate(shard, "PUT", key, json={"value": body.value, "version": version})
-    return {"key": key, "version": version, "shard": shard, "replicas": acked,
-            "degraded": len(acked) < REPLICAS_PER_SHARD}
+    degraded = len(acked) < REPLICAS_PER_SHARD
+    if degraded:
+        DEGRADED_WRITES.labels(str(shard)).inc()
+    return {"key": key, "version": version, "shard": shard, "replicas": acked, "degraded": degraded}
 
 
 @app.get("/internal/data/{key:path}")
@@ -314,10 +366,12 @@ async def scan(prefix: str = ""):
     items, unavailable = [], []
 
     async def scan_shard(shard: int):
-        for node in shard_nodes(shard, (READY,)):
+        for i, node in enumerate(shard_nodes(shard, (READY,))):
             try:
                 r = await http.get(f"{node.url}/internal/data", params={"prefix": prefix})
                 r.raise_for_status()
+                if i > 0:
+                    stats["failovers"] += 1     # the scan had to switch to another replica of the shard
                 return [{**it, "shard": shard, "served_by": node.node_id} for it in r.json()["items"]]
             except httpx.HTTPError as e:
                 mark_down(node, f"scan failed: {e!r}")

@@ -39,5 +39,14 @@ def resource_prefix(resource_type: str | None = None) -> str:
     return f"resource:{resource_type}:" if resource_type else "resource:"
 
 
+_last_now: list[datetime] = []
+
+
 def now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="milliseconds")
+    """UTC timestamp, never earlier than the previous one from this process: if the system clock is stepped back
+    (NTP / Hyper-V time sync on WSL), a record's history and updated_at still never run backwards."""
+    now = datetime.now(timezone.utc)
+    if _last_now and now < _last_now[0]:
+        now = _last_now[0]
+    _last_now[:] = [now]
+    return now.isoformat(timespec="milliseconds")

@@ -1,0 +1,733 @@
+=====================================================================================================================
+ ERMS - EXTENSIONS REPORT
+   Extension #39  Prometheus + Grafana monitoring           (Docker Compose and Kubernetes)
+   Extension #18  KEDA autoscaling on RabbitMQ queue depth  (Kubernetes)
+ Tests: tests/spec/test_x_extensions.py (12 tests) + tests/unit/test_metrics.py (6 unit tests)
+ Run:   ./scripts/spec-test.sh compose -k "x39 or x18"     ./scripts/spec-test.sh k8s -k "x39 or x18"
+=====================================================================================================================
+
+CONTENTS
+  PART A - Results at a glance
+  PART B - What was implemented
+  PART C - Every file added / changed (and why)
+  PART D - Checklist: every extension feature, what was tested, what was observed
+  PART E - Regression check: everything that existed before still passes
+  PART F - Full raw test output of the extension tests (both deployments) + requirement matrix
+  PART G - KEDA demo transcript (./scripts/keda-demo.sh)
+
+
+=====================================================================================================================
+ PART A - RESULTS AT A GLANCE
+=====================================================================================================================
+
+  Run                     Extension tests                         Individual checks
+  ----------------------  --------------------------------------  --------------------
+  Docker Compose          8 passed, 0 failed, 4 skipped (KEDA)     73 passed, 0 failed
+  Kubernetes (minikube)   12 passed, 0 failed, 0 skipped           108 passed, 0 failed
+  Merged                  19 extension requirements: PASS 19, FAIL 0, NOT COVERED 0
+
+  The 4 KEDA tests are skipped on Compose only because KEDA is a Kubernetes component (Compose has no
+  autoscaler); all 4 ran and passed on Kubernetes.
+
+
+=====================================================================================================================
+ PART B - WHAT WAS IMPLEMENTED
+=====================================================================================================================
+
+ #39 PROMETHEUS + GRAFANA MONITORING
+  - /metrics (Prometheus format) on every service: request-service, matching-service, coordinator, 6 storage nodes
+      every service : HTTP requests by route template / method / status + latency histogram
+      request-svc   : requests created (by type), published to RabbitMQ (ok / failed / broker down),
+                      status changes, resources registered
+      matching-svc  : matches by outcome (matched / no_match / skipped) and path (queue / api),
+                      TIME FROM REQUEST TO MATCH (histogram), messages consumed, retries, gave up,
+                      in-flight messages, reconciler fixes, sweeper re-queues, broker connected
+      coordinator   : NODE UP/DOWN per node, node status, ready replicas per shard, SHARD HEALTH,
+                      records per node, heartbeat age, reads / writes, READ FAILOVERS,
+                      node-down events, degraded writes (live view exported at scrape time = always exact)
+      storage node  : RESYNC DURATION (histogram + last), resyncs ok/failed, records received / applied,
+                      local records, ready flag
+  - RabbitMQ's built-in rabbitmq_prometheus plugin scraped: QUEUE DEPTH (waiting / unacked), consumers, retry queue
+  - Prometheus v3.15.1, scraping every 5 s
+      Compose    : static targets + DNS discovery (finds every replica of request / matching service)
+      Kubernetes : pod discovery via the Kubernetes API (read-only Role), so pods added by scaling or
+                   recovery are scraped within seconds; NodePort 30090
+  - Grafana 13.2.5 with the Prometheus datasource and the "ERMS overview" dashboard provisioned at start-up
+      21 panels in 4 sections (cluster health / messaging + autoscaling / latency + API / failures + recovery),
+      refresh 5 s, home page of Grafana; viewing needs no login (read-only), admin password random
+      (.env on Compose, Secret grafana-credentials on Kubernetes); NodePort 30030
+  - Dashboard generated from monitoring/grafana/build_dashboard.py (easy to change)
+
+ #18 KEDA AUTOSCALING ON RABBITMQ QUEUE DEPTH
+  - KEDA v2.21.0 installed by k8s/deploy.sh (skipped with a warning when offline / SKIP_KEDA=1)
+  - ScaledObject: matching-service between 2 and 6 pods, 1 pod per 5 messages waiting in matching.requests,
+    checked every 5 s; scale up immediately, scale down 30 s after the queue drained (default would be 5 min)
+  - KEDA's broker login from Secret keda-rabbitmq via a TriggerAuthentication (no password in any manifest)
+  - scripts/matching-replicas.sh N|auto: pin the replica count (KEDA paused-replicas) / back to automatic,
+    because with KEDA a plain `kubectl scale` is undone by its HPA within seconds (tested)
+  - scripts/keda-demo.sh: 200-request burst with a live table of queue depth / ready pods / desired pods
+  - old CPU-based HPA removed (two autoscalers on one Deployment fight each other)
+
+ FOUND AND FIXED WHILE TESTING
+  - Timestamps could run backwards when WSL / NTP stepped the system clock back (seen once: updated_at earlier
+    than created_at). now_iso() is now monotonic per process; unit test added.
+  - "Failovers rise" was promised for the demo but not yet verified: a read that switched to another replica
+    during a prefix SCAN was not counted as a failover. All read paths now count it; unit test + live test
+    (kill the replica that serves the reads -> failover counter rises on the dashboard) added.
+  - RabbitMQ had no restart policy in docker-compose.yml (every other service had one). When the WSL machine
+    rebooted during the final checks, all containers came back except RabbitMQ, so Compose had no broker.
+    Added `restart: unless-stopped`; tested by killing RabbitMQ from inside: Docker restarted it in 2 s and
+    the services reconnected by themselves. (Kubernetes was not affected: StatefulSets always restart pods;
+    after the same reboot all 14 erms pods, the 3 KEDA pods and the ScaledObject came back on their own.)
+
+
+=====================================================================================================================
+ PART C - EVERY FILE ADDED / CHANGED
+=====================================================================================================================
+
+ NEW
+  common/metrics.py                       /metrics endpoint + HTTP metrics middleware for every service
+  matching_service/metrics.py             matching metrics (time to match, outcomes, retries, reconciler ...)
+  monitoring/prometheus/prometheus-compose.yml   scrape config for Docker Compose
+  monitoring/prometheus/prometheus-k8s.yml       scrape config for Kubernetes (pod discovery)
+  monitoring/grafana/provisioning/datasources/prometheus.yml   Grafana datasource
+  monitoring/grafana/provisioning/dashboards/erms.yml          dashboard provider
+  monitoring/grafana/dashboards/erms-overview.json             the dashboard (generated)
+  monitoring/grafana/build_dashboard.py                        dashboard generator
+  k8s/70-monitoring.yaml                  Prometheus + Grafana Deployments, Services, ServiceAccount, Role
+  k8s/80-keda-autoscaling.yaml            KEDA ScaledObject + TriggerAuthentication
+  scripts/keda-demo.sh                    autoscaling demo
+  scripts/matching-replicas.sh            KEDA-aware manual scaling / stop / auto
+  scripts/grafana-password.sh             print the Grafana admin password
+  tests/unit/test_metrics.py              6 unit tests for the metrics
+  tests/spec/test_x_extensions.py         12 live tests for both extensions
+ CHANGED
+  requirements.txt                        + prometheus-client==0.26.0
+  coordinator/app.py                      metrics (live cluster collector, node-down, degraded writes);
+                                          failovers of prefix scans counted too
+  storage_node/app.py                     metrics (resync duration / counts, local records)
+  request_service/app.py                  metrics (created, published, status changes, registrations)
+  matching_service/app.py, matcher.py     metrics (consumed, retries, in-flight, reconciler, time to match)
+  common/models.py                        monotonic timestamps (clock-step fix)
+  docker-compose.yml                      + prometheus, grafana services; RabbitMQ restart policy
+  k8s/10-rabbitmq.yaml                    + metrics port 15692 (container + Service)
+  k8s/20,30,40,50-*.yaml                  + prometheus.io scrape annotations on every application pod
+  k8s/deploy.sh                           installs KEDA, Grafana/KEDA secrets, monitoring ConfigMaps, new URLs
+  scripts/init-env.sh                     also generates GRAFANA_ADMIN_PASSWORD; safe to re-run
+  scripts/demo.sh, k8s-demo.sh            KEDA-aware scaling, monitoring pointers
+  scripts/expose.py                       + ports 30030 (Grafana), 30090 (Prometheus) for the Windows browser
+  tests/spec/spec_env.py, conftest/report/requirements, test_spec_compliance.py   KEDA-aware stop/scale,
+                                          monitoring containers counted, extension requirements X39.* / X18.*
+  tests/k8s/test_k8s.py                   KEDA-aware scaling
+  tests/unit/test_edge_cases.py           + clock-step test
+  README.md                               Monitoring + Autoscaling sections, URLs, manifests, commands, layout
+ REMOVED
+  k8s/60-hpa-optional.yaml                old CPU HPA (would fight KEDA's HPA)
+
+
+=====================================================================================================================
+ PART D - CHECKLIST: EVERY EXTENSION FEATURE, WHAT WAS TESTED, WHAT WAS OBSERVED  (Kubernetes run unless noted)
+=====================================================================================================================
+
+ #39 PROMETHEUS + GRAFANA
+  [✔] Runs on both deployments - Compose: prometheus + grafana containers running; Kubernetes: Deployments
+      prometheus (prom/prometheus:v3.15.1) and grafana (grafana/grafana:13.2.5) available, NodePorts 30090/30030,
+      read-only Role (get/list/watch) for pod discovery; Prometheus ready, Grafana healthy
+  [✔] Every service exposes /metrics
+        request-service : 200 text/plain, erms_http_requests_total, erms_requests_created_total,
+                          erms_requests_published_total; /metrics hidden from /docs
+        coordinator     : erms_storage_node_up for all 6 nodes, shard ready replicas, failovers, node-down,
+                          degraded writes
+        matching-service: erms_matches_total, erms_time_to_match_seconds, messages consumed, reconciler fixes
+        6 storage nodes : each with its own record count (1223, 1194, 1241 per shard, equal on both
+                          replicas) and resync metrics
+  [✔] Prometheus scrapes everything, all targets up - coordinator 1, storage-node 6, request-service 2,
+      matching-service 2, rabbitmq 1; 61 erms_* metric names stored
+  [✔] RabbitMQ plugin - depth of matching.requests, its consumer count (= 2 matching pods), retry queue
+  [✔] Grafana provisioned - datasource Prometheus (http://prometheus:9090), "Successfully queried the Prometheus
+      API"; dashboard "ERMS overview" in folder ERMS; it is the home page
+  [✔] Secured - view without login: 200; change without login: 403; admin uses a 32-character random
+      password; default admin/admin rejected (401)
+  [✔] Dashboard has every promised view - queue depth; time from request to match; failovers; shard health;
+      storage node up/down (red/green timeline); resync duration; matching pods (autoscaling); API rate /
+      latency / errors  (21 panels, 4 sections, refresh 5 s)
+  [✔] No empty panels - all 33 panel queries return data when run through Grafana itself (33/33)
+  [✔] Metrics follow real traffic - 6 requests: created 242 -> 248, published 90 -> 96, POST /requests 201
+      242 -> 248, matched via queue 50 -> 56, time-to-match samples 50 -> 56; recorded time-to-match average
+      2.10 s vs 2.06 s from the requests' own timestamps
+  [✔] Storage failure visible (the "demo moment")
+        before : storage-shard-1-1 READY (1, green)
+        stop   : kubectl scale statefulset/storage-shard-1 --replicas=1
+        during : dashboard shows it DOWN (0, red) 12 s after the stop (same via Grafana's own query);
+                 ready replicas of shard 1 = 1 of 2; healthy shards still 3; degraded write counted (1 -> 2);
+                 node-down event counted (0 -> 1)
+        restart: kubectl scale ... --replicas=2
+        after  : READY (green) again 6 s after the restart; timeline shows the red stretch then green;
+                 its resync recorded: 1 resync, 1 missed write applied, took 259 ms
+      (Compose run: same test with docker compose stop/start storage-1a - passed)
+  [✔] Failovers rise - kill the replica that SERVES the reads while reads keep coming
+        Kubernetes: kubectl delete pod storage-shard-1-0 -> 21/21 reads OK (switched to storage-shard-1-1),
+                    failover counter 1 -> 2 on the dashboard (same through Grafana's panel query), node counted
+                    down (1 -> 2), READY (green) again after the StatefulSet recreated it
+        Compose   : docker compose stop / start storage-1a -> 35/35 reads OK (switched to storage-1b), failover
+                    counter 6 -> 7, node counted down (2 -> 3), READY (green) again
+
+ #18 KEDA AUTOSCALING
+  [✔] KEDA installed - keda-operator, keda-metrics-apiserver, keda-admission (all ghcr.io/kedacore 2.21.0)
+      available; CRDs scaledobjects / triggerauthentications installed; external metrics API Available
+  [✔] ScaledObject - targets Deployment matching-service; min 2, max 6, polling 5 s; trigger RabbitMQ queue
+      matching.requests, QueueLength, 5 per pod; Ready=True, Paused=False, HPAActive=True
+  [✔] HPA - KEDA created keda-hpa-matching-service (min 2, max 6) on external metric
+      s0-rabbitmq-matching-requests; scale up 0 s, scale down 30 s; it is the ONLY autoscaler of the Deployment;
+      old CPU HPA manifest removed
+  [✔] Credentials from a Secret - TriggerAuthentication reads key "host" of Secret keda-rabbitmq; no password /
+      amqp URL in k8s/80-keda-autoscaling.yaml
+  [✔] Scales UP by itself - 200 requests accepted and queued in 2.9 s; up to 188 messages waiting; KEDA asked
+      for more pods 15 s after the burst; 6 Ready pods 21 s after the burst
+      timeline (s, ready, desired): (0, 2, 2) (15, 2, 6) (21, 6, 6) (99, 4, 6) (101, 4, 4) (112, 2, 4) (115, 2, 2)
+  [✔] New pods did real work - matches per pod 48 / 44 / 27 / ... (the pods added by KEDA took part)
+  [✔] Scales DOWN by itself - back to 2 pods 144 s after the burst (68 s after the last match)
+  [✔] Safe - all 200 requests matched through the queue (76 s), capacity exact (210 -> 10), API answered
+      239/239 calls (100%) during the whole scale-up and scale-down
+  [✔] Visible in monitoring - Prometheus saw the peak of 6 matching pods (panel "Autoscaling: matching pods vs
+      queue depth") and the return to 2
+  [✔] Manual control still works - plain `kubectl scale --replicas=5` is undone by KEDA's HPA (back to 2);
+      matching-replicas.sh 3 pins 3 pods (paused-replicas=3) and the pin holds 45 s with an empty queue;
+      matching-replicas.sh auto removes the pin, KEDA scales back to 2 and its HPA is active again
+
+
+=====================================================================================================================
+ PART E - REGRESSION CHECK: EVERYTHING THAT EXISTED BEFORE STILL PASSES (with both extensions installed)
+=====================================================================================================================
+
+  Suite                                         Docker Compose            Kubernetes
+  --------------------------------------------  ------------------------  ------------------------
+  Unit tests (tests/unit)                       34/34 (no deployment needed: 27 old + 6 metrics + 1 clock)
+  PDF requirement suite (tests/spec)            40/40 (8 k8s-only skip)   48/48
+  Older integration suite (tests/integration)   19/19                     18/18 (1 Compose-only skip)
+  Older Kubernetes suite (tests/k8s)            -                         6/6
+  Demo scripts                                  demo.sh exit 0 (9 steps)  k8s-demo.sh exit 0, keda-demo.sh exit 0
+  PDF requirements (merged)                     PASS 103, FAIL 0, NOT COVERED 0, OPTIONAL 1 (cloud)
+
+  Every suite and demo above was run on the FINAL code (after the last change, the RabbitMQ restart policy)
+  and after a full reboot of the machine: Compose 2026-11-19 23:43, Kubernetes 2026-11-19 23:52 - 2026-11-20.
+
+
+=====================================================================================================================
+ PART F - FULL RAW TEST OUTPUT OF THE EXTENSION TESTS (Compose run + Kubernetes run, merged)
+=====================================================================================================================
+
+======================================================================================================================
+ ERMS - SPECIFICATION COMPLIANCE REPORT  (every requirement of 'Emergency Response Matching.pdf')
+ target: compose  API http://localhost:8080  coordinator http://localhost:8001  RabbitMQ http://localhost:15672  Grafana http://localhost:3000
+         run 2026-11-19 23:43:36 -> 2026-11-19 23:46:54   tests: 8 passed, 0 failed, 4 skipped   individual checks: 73 passed, 0 failed
+ target: k8s      API http://192.168.49.2:30080  coordinator http://192.168.49.2:30081  RabbitMQ http://192.168.49.2:30672  Grafana http://192.168.49.2:30030  namespace erms
+         run 2026-11-19 23:52:00 -> 2026-11-20 00:04:14   tests: 12 passed, 0 failed, 0 skipped   individual checks: 108 passed, 0 failed
+======================================================================================================================
+
+PART 1 - EVERY CHECK PERFORMED (per test, in run order; ✔ = check passed, ✘ = failed, · = observation)
+
+---- target: compose ----
+
+[PASS] test_x39_monitoring_is_deployed  (0.6s)  covers: X39.both
+       #39: Prometheus and Grafana run as part of this deployment (Compose services / Kubernetes Deployments).
+     ✔  'prometheus' container is running  =>  1 running
+     ✔  'grafana' container is running  =>  1 running
+     ✔  Prometheus is ready  =>  http://localhost:9090/-/ready -> 200
+     ✔  Grafana is healthy  =>  Grafana 13.2.5
+
+[PASS] test_x39_every_service_exposes_metrics  (5.6s)  covers: X39.metrics
+       #39: every ERMS service serves Prometheus metrics at /metrics.
+     ✔  request-service: GET /metrics -> 200 Prometheus text  =>  text/plain; version=1.0.0; charset=utf-8
+     ✔  ... with erms_http_requests_total  =>
+           ['erms_http_requests_total{method="POST",route="/requests",service="request-service",status="201"} 235.0']
+     ✔  ... with erms_requests_created_total  =>  ['erms_requests_created_total{type="rescue"} 0.0']
+     ✔  ... with erms_requests_published_total  =>
+           ['erms_requests_published_total{result="ok",routing_key="request.created"} 35.0']
+     ✔  /metrics is not part of the documented client API  =>  hidden from /docs
+     ✔  coordinator: /metrics with the live state of all 6 storage nodes  =>
+           ['erms_storage_node_up{node="storage-1b",shard="1"} 1.0',
+           'erms_storage_node_up{node="storage-2a",shard="2"} 1.0']
+     ✔  ... with erms_shard_ready_replicas  =>  ['erms_shard_ready_replicas{shard="0"} 2.0']
+     ✔  ... with erms_storage_failovers_total  =>  ['erms_storage_failovers_total 6.0']
+     ✔  ... with erms_storage_node_down_total  =>  ['erms_storage_node_down_total{node="storage-1b",shard="1"}
+           0.0']
+     ✔  ... with erms_storage_degraded_writes_total  =>  ['erms_storage_degraded_writes_total{shard="0"} 6.0']
+     ✔  matching-service: /metrics (called from inside the cluster)  =>  2 instance(s)
+     ✔  ... with erms_matches_total  =>  ['erms_matches_total{result="matched",via="queue"} 2.0']
+     ✔  ... with erms_time_to_match_seconds_bucket  =>  ['erms_time_to_match_seconds_bucket{le="0.5",via="queue"}
+           0.0']
+     ✔  ... with erms_messages_consumed_total  =>  ['erms_messages_consumed_total{routing_key="request.created"}
+           2.0']
+     ✔  ... with erms_reconciler_fixes_total  =>  ['erms_reconciler_fixes_total{kind="orphan_claim"} 0.0']
+     ✔  storage node storage-0a: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-0a",shard="0"} 872.0
+     ✔  storage node storage-0b: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-0b",shard="0"} 872.0
+     ✔  storage node storage-1a: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-1a",shard="1"} 898.0
+     ✔  storage node storage-1b: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-1b",shard="1"} 898.0
+     ✔  storage node storage-2a: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-2a",shard="2"} 876.0
+     ✔  storage node storage-2b: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-2b",shard="2"} 876.0
+
+[PASS] test_x39_prometheus_scrapes_every_component  (0.3s)  covers: X39.scrape, X39.rabbit
+       #39: Prometheus scrapes every component and every replica, including RabbitMQ's built-in plugin.
+     ✔  job 'coordinator': 1 target(s), all up  =>  ['coordinator']
+     ✔  job 'storage-node': 6 target(s), all up  =>  ['storage-0a', 'storage-0b', 'storage-1a', 'storage-1b',
+           'storage-2a', 'storage-2b']
+     ✔  job 'request-service': 1 target(s), all up  =>  ['172.18.0.7:8000']
+     ✔  job 'matching-service': 2 target(s), all up  =>  ['172.18.0.11:8000', '172.18.0.6:8000']
+     ✔  job 'rabbitmq': 1 target(s), all up  =>  ['rabbitmq']
+     ✔  RabbitMQ plugin: depth of queue matching.requests is collected  =>  0 waiting
+     ✔  RabbitMQ plugin: its consumer count is collected (= matching pods)  =>  2.0
+     ✔  the retry queue matching.retry is collected too  =>  matching.retry
+     ✔  ERMS metric families stored in Prometheus  =>  61 erms_* metric names
+
+[PASS] test_x39_grafana_is_provisioned_and_secured  (0.3s)  covers: X39.grafana, X39.secure
+       #39: Grafana comes up with the Prometheus datasource and the ERMS dashboard, viewable without login.
+     ✔  datasource 'Prometheus' provisioned (http://prometheus:9090)  =>  ['Prometheus']
+     ✔  and Grafana can reach Prometheus through it  =>  Successfully queried the Prometheus API.
+     ✔  dashboard 'ERMS overview' provisioned in folder 'ERMS'  =>  ['ERMS overview']
+     ✔  it is Grafana's home page (opening Grafana shows it directly)  =>  /d/default-home-dashboard/erms-overview
+     ✔  anyone can VIEW the dashboard without logging in (anonymous viewer)  =>  GET without login -> 200
+     ✔  ... but nobody can change it without logging in  =>  POST without login -> 403
+     ✔  the admin login uses the generated password (from .env / Secret grafana-credentials)  =>  admin /
+           32-character random password
+     ✔  the default admin/admin is rejected  =>  admin/admin -> 401
+
+[PASS] test_x39_dashboard_shows_everything_promised_with_data  (16.3s)  covers: X39.panels, X39.nodata
+       #39: the dashboard has a panel for each promised view (queue depth, time to match, failovers, shard health,
+         node up/down, resync duration, matching pods, API) and every panel query returns data, through Grafana.
+     ✔  panel(s) for queue depth  =>  Queue depth | RabbitMQ queue depth
+     ✔  panel(s) for time from request to match  =>  Time from request to match
+     ✔  panel(s) for failovers  =>  Read failovers | Failures (per minute)
+     ✔  panel(s) for shard health  =>  Healthy shards | Ready replicas per shard
+     ✔  panel(s) for storage node up / down (red / green)  =>  Storage nodes (green = ready, red = down) | Storage
+           nodes ready
+     ✔  panel(s) for resync duration  =>  Last resync duration per node
+     ✔  panel(s) for matching pods (autoscaling)  =>  Matching pods | Autoscaling: matching pods vs queue depth
+     ✔  panel(s) for API rate / latency / errors  =>  API requests per second, by status | API latency p95, by route
+     ·  dashboard size  =>  21 panels in 4 sections, refresh 5 s
+     ✔  all 33 panel queries return data when run through Grafana  =>  33/33 with data
+
+[PASS] test_x39_metrics_follow_real_traffic  (9.0s)  covers: X39.traffic
+       #39: creating and matching requests moves the counters by exactly that much, and time-to-match is right.
+     ✔  created: +6 after 6 requests  =>  238 -> 244
+     ✔  published: +6 after 6 requests  =>  38 -> 44
+     ✔  POST /requests 201: +6 after 6 requests  =>  238 -> 244
+     ✔  matched via queue: +6 after 6 requests  =>  6 -> 12
+     ✔  time-to-match samples: +6 after 6 requests  =>  6 -> 12
+     ✔  the recorded time-to-match equals the real one (created_at -> matched_at of the requests)  =>  metric average
+           2.22s, requests' own timestamps 2.18s
+
+[PASS] test_x39_storage_failure_is_visible_on_the_dashboard  (22.3s)  covers: X39.failure
+       #39 demo moment: stop a storage node -> it turns DOWN (red) on the dashboard and failures are counted; restart
+         it -> READY (green) again, with its resync and resync duration recorded.
+     ✔  before: storage-1a shows READY (1, green)  =>  erms_storage_node_up{node="storage-1a"} = 1
+     ·  STOP the storage node  =>  docker compose stop storage-1a
+     ✔  during: the dashboard shows storage-1a DOWN (0, red)  =>  10s after the stop
+     ✔  during: 'Grafana -> Prometheus' returns the same (the panel's own query)  =>  erms_storage_node_up = 0
+     ✔  during: 'Ready replicas per shard' drops to 1 for shard 1  =>  1 of 2
+     ✔  during: 'Healthy shards' stays 3 (the replica serves the shard)  =>  3
+     ✔  during: a write with one copy is counted as a degraded write  =>  10 -> 11
+     ✔  during: the node-down event is counted  =>  1 -> 2
+     ·  RESTART the storage node  =>  docker compose start storage-1a
+     ✔  after: the dashboard shows storage-1a READY (1, green) again  =>  5s after the restart
+     ✔  the node's timeline over the test shows the red stretch (min 0) and ends green (1)  =>  min over last 50s =
+           0, now = 1
+     ✔  after: the restarted node's resync is recorded (count, records applied, duration on the dashboard)  =>
+           resyncs 1, missed writes applied 1, resync took 146 ms
+
+[PASS] test_x39_killing_the_read_replica_makes_failovers_rise  (14.1s)  covers: X39.failure
+       #39 demo moment, the 'failovers rise' part: kill the storage replica that SERVES a shard's reads while reads
+         keep coming -> reads switch to the other replica, the failover counter on the dashboard rises, the node is
+         counted down, and after its restart it is READY (green) again.
+     ·  BEFORE: reads of shard 1 are served by storage-1a
+     ·  KILL the read replica  =>  docker compose stop storage-1a
+     ·  RESTART it  =>  docker compose start storage-1a
+     ✔  reads kept working: none failed while the replica was killed and came back  =>  35/35 succeeded (100%)
+     ✔  reads switched to the other replica of the shard  =>  {'storage-1a': 10, 'storage-1b': 25}
+     ✔  the dashboard's failover counter ROSE ('Read failovers' / 'Failures (per minute)' panels)  =>
+           erms_storage_failovers_total 6 -> 7
+     ✔  ... the same value through Grafana's own panel query  =>  sum(erms_storage_failovers_total) = 7
+     ✔  storage-1a was counted DOWN (red on the node timeline)  =>  node-down events 2 -> 3
+     ✔  after: storage-1a is READY (green) again on the dashboard  =>  erms_storage_node_up{node="storage-1a"} = 1
+
+[SKIP] test_x18_keda_is_installed  (0.0s)  covers: X18.install
+       #18: KEDA's components run in the cluster and serve the external-metrics API used by the HPA.
+       skipped: KEDA runs on Kubernetes only: verified by the run against the minikube deployment (SPEC_TARGET=k8s)
+
+[SKIP] test_x18_scaledobject_hpa_and_credentials  (0.0s)  covers: X18.scaledobject, X18.hpa, X18.secret
+       #18: the ScaledObject, the HPA KEDA creates from it, and where KEDA's broker credentials come from.
+       skipped: KEDA runs on Kubernetes only: verified by the run against the minikube deployment (SPEC_TARGET=k8s)
+
+[SKIP] test_x18_burst_scales_up_then_back_down  (0.0s)  covers: X18.up, X18.down, X18.safe, X18.visible
+       #18 demo moment: 200 requests pile up in RabbitMQ -> KEDA scales matching-service 2 -> 6 by itself, the queue
+         drains, and it scales back to 2; nothing is lost, nothing matched twice, the API stays up.
+       skipped: KEDA runs on Kubernetes only: verified by the run against the minikube deployment (SPEC_TARGET=k8s)
+
+[SKIP] test_x18_manual_pin_then_automatic_again  (0.0s)  covers: X18.manual
+       #18: with KEDA in charge a plain `kubectl scale` is undone; scripts/matching-replicas.sh pins the replica count
+         (paused-replicas) and hands it back to KEDA.
+       skipped: KEDA runs on Kubernetes only: verified by the run against the minikube deployment (SPEC_TARGET=k8s)
+
+---- target: k8s ----
+
+[PASS] test_x39_monitoring_is_deployed  (0.8s)  covers: X39.both
+       #39: Prometheus and Grafana run as part of this deployment (Compose services / Kubernetes Deployments).
+     ✔  Deployment 'prometheus' is available  =>  prom/prometheus:v3.15.1
+     ✔  Deployment 'grafana' is available  =>  grafana/grafana:13.2.5
+     ✔  Prometheus Service NodePort 30090, Grafana NodePort 30030  =>  30090 / 30030
+     ✔  Prometheus discovers pods with a read-only Role limited to this namespace  =>  ['get', 'list', 'watch']
+     ✔  Prometheus is ready  =>  http://192.168.49.2:30090/-/ready -> 200
+     ✔  Grafana is healthy  =>  Grafana 13.2.5
+
+[PASS] test_x39_every_service_exposes_metrics  (5.8s)  covers: X39.metrics
+       #39: every ERMS service serves Prometheus metrics at /metrics.
+     ✔  request-service: GET /metrics -> 200 Prometheus text  =>  text/plain; version=1.0.0; charset=utf-8
+     ✔  ... with erms_http_requests_total  =>
+           ['erms_http_requests_total{method="GET",route="/health",service="request-service",status="200"} 222.0']
+     ✔  ... with erms_requests_created_total  =>  ['erms_requests_created_total{type="rescue"} 0.0']
+     ✔  ... with erms_requests_published_total  =>
+           ['erms_requests_published_total{result="ok",routing_key="request.created"} 79.0']
+     ✔  /metrics is not part of the documented client API  =>  hidden from /docs
+     ✔  coordinator: /metrics with the live state of all 6 storage nodes  =>  ['erms_storage_node_up{node="storage-
+           shard-0-0",shard="0"} 1.0', 'erms_storage_node_up{node="storage-shard-2-0",shard="2"} 1.0']
+     ✔  ... with erms_shard_ready_replicas  =>  ['erms_shard_ready_replicas{shard="0"} 2.0']
+     ✔  ... with erms_storage_failovers_total  =>  ['erms_storage_failovers_total 1.0']
+     ✔  ... with erms_storage_node_down_total  =>  ['erms_storage_node_down_total{node="storage-
+           shard-0-0",shard="0"} 0.0']
+     ✔  ... with erms_storage_degraded_writes_total  =>  ['erms_storage_degraded_writes_total{shard="0"} 0.0']
+     ✔  matching-service: /metrics (called from inside the cluster)  =>  2 instance(s)
+     ✔  ... with erms_matches_total  =>  ['erms_matches_total{result="matched",via="queue"} 47.0']
+     ✔  ... with erms_time_to_match_seconds_bucket  =>  ['erms_time_to_match_seconds_bucket{le="0.5",via="queue"}
+           0.0']
+     ✔  ... with erms_messages_consumed_total  =>  ['erms_messages_consumed_total{routing_key="request.created"}
+           47.0']
+     ✔  ... with erms_reconciler_fixes_total  =>  ['erms_reconciler_fixes_total{kind="orphan_claim"} 0.0']
+     ✔  storage node storage-shard-0-0: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-shard-0-0",shard="0"} 1223.0
+     ✔  storage node storage-shard-0-1: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-shard-0-1",shard="0"} 1223.0
+     ✔  storage node storage-shard-1-0: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-shard-1-0",shard="1"} 1194.0
+     ✔  storage node storage-shard-1-1: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-shard-1-1",shard="1"} 1194.0
+     ✔  storage node storage-shard-2-0: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-shard-2-0",shard="2"} 1241.0
+     ✔  storage node storage-shard-2-1: /metrics with its own records and resync metrics  =>
+           erms_storage_local_keys{node="storage-shard-2-1",shard="2"} 1241.0
+
+[PASS] test_x39_prometheus_scrapes_every_component  (0.7s)  covers: X39.scrape, X39.rabbit
+       #39: Prometheus scrapes every component and every replica, including RabbitMQ's built-in plugin.
+     ✔  job 'coordinator': 1 target(s), all up  =>  ['coordinator-6cd87f5d9b-n48wj']
+     ✔  job 'storage-node': 6 target(s), all up  =>  ['storage-shard-0-0', 'storage-shard-0-1', 'storage-shard-1-0',
+           'storage-shard-1-1', 'storage-shard-2-0', 'storage-shard-2-1']
+     ✔  job 'request-service': 2 target(s), all up  =>  ['request-service-7f7cf84b97-krfcg', 'request-
+           service-7f7cf84b97-rdjp8']
+     ✔  job 'matching-service': 2 target(s), all up  =>  ['matching-service-5675cb9575-5gq7g', 'matching-
+           service-5675cb9575-xmkvr']
+     ✔  job 'rabbitmq': 1 target(s), all up  =>  ['rabbitmq']
+     ✔  RabbitMQ plugin: depth of queue matching.requests is collected  =>  0 waiting
+     ✔  RabbitMQ plugin: its consumer count is collected (= matching pods)  =>  2.0
+     ✔  the retry queue matching.retry is collected too  =>  matching.retry
+     ✔  ERMS metric families stored in Prometheus  =>  61 erms_* metric names
+
+[PASS] test_x39_grafana_is_provisioned_and_secured  (1.1s)  covers: X39.grafana, X39.secure
+       #39: Grafana comes up with the Prometheus datasource and the ERMS dashboard, viewable without login.
+     ✔  datasource 'Prometheus' provisioned (http://prometheus:9090)  =>  ['Prometheus']
+     ✔  and Grafana can reach Prometheus through it  =>  Successfully queried the Prometheus API.
+     ✔  dashboard 'ERMS overview' provisioned in folder 'ERMS'  =>  ['ERMS overview']
+     ✔  it is Grafana's home page (opening Grafana shows it directly)  =>  /d/default-home-dashboard/erms-overview
+     ✔  anyone can VIEW the dashboard without logging in (anonymous viewer)  =>  GET without login -> 200
+     ✔  ... but nobody can change it without logging in  =>  POST without login -> 403
+     ✔  the admin login uses the generated password (from .env / Secret grafana-credentials)  =>  admin /
+           32-character random password
+     ✔  the default admin/admin is rejected  =>  admin/admin -> 401
+
+[PASS] test_x39_dashboard_shows_everything_promised_with_data  (14.8s)  covers: X39.panels, X39.nodata
+       #39: the dashboard has a panel for each promised view (queue depth, time to match, failovers, shard health,
+         node up/down, resync duration, matching pods, API) and every panel query returns data, through Grafana.
+     ✔  panel(s) for queue depth  =>  Queue depth | RabbitMQ queue depth
+     ✔  panel(s) for time from request to match  =>  Time from request to match
+     ✔  panel(s) for failovers  =>  Read failovers | Failures (per minute)
+     ✔  panel(s) for shard health  =>  Healthy shards | Ready replicas per shard
+     ✔  panel(s) for storage node up / down (red / green)  =>  Storage nodes (green = ready, red = down) | Storage
+           nodes ready
+     ✔  panel(s) for resync duration  =>  Last resync duration per node
+     ✔  panel(s) for matching pods (autoscaling)  =>  Matching pods | Autoscaling: matching pods vs queue depth
+     ✔  panel(s) for API rate / latency / errors  =>  API requests per second, by status | API latency p95, by route
+     ·  dashboard size  =>  21 panels in 4 sections, refresh 5 s
+     ✔  all 33 panel queries return data when run through Grafana  =>  33/33 with data
+
+[PASS] test_x39_metrics_follow_real_traffic  (8.7s)  covers: X39.traffic
+       #39: creating and matching requests moves the counters by exactly that much, and time-to-match is right.
+     ✔  created: +6 after 6 requests  =>  242 -> 248
+     ✔  published: +6 after 6 requests  =>  90 -> 96
+     ✔  POST /requests 201: +6 after 6 requests  =>  242 -> 248
+     ✔  matched via queue: +6 after 6 requests  =>  50 -> 56
+     ✔  time-to-match samples: +6 after 6 requests  =>  50 -> 56
+     ✔  the recorded time-to-match equals the real one (created_at -> matched_at of the requests)  =>  metric average
+           2.10s, requests' own timestamps 2.06s
+
+[PASS] test_x39_storage_failure_is_visible_on_the_dashboard  (24.2s)  covers: X39.failure
+       #39 demo moment: stop a storage node -> it turns DOWN (red) on the dashboard and failures are counted; restart
+         it -> READY (green) again, with its resync and resync duration recorded.
+     ✔  before: storage-shard-1-1 shows READY (1, green)  =>  erms_storage_node_up{node="storage-shard-1-1"} = 1
+     ·  STOP the storage node  =>  kubectl -n erms scale statefulset/storage-shard-1 --replicas=1   (stops pod
+           storage-shard-1-1)
+     ✔  during: the dashboard shows storage-shard-1-1 DOWN (0, red)  =>  12s after the stop
+     ✔  during: 'Grafana -> Prometheus' returns the same (the panel's own query)  =>  erms_storage_node_up = 0
+     ✔  during: 'Ready replicas per shard' drops to 1 for shard 1  =>  1 of 2
+     ✔  during: 'Healthy shards' stays 3 (the replica serves the shard)  =>  3
+     ✔  during: a write with one copy is counted as a degraded write  =>  1 -> 2
+     ✔  during: the node-down event is counted  =>  0 -> 1
+     ·  RESTART the storage node  =>  kubectl -n erms scale statefulset/storage-shard-1 --replicas=2   (restarts pod
+           storage-shard-1-1)
+     ✔  after: the dashboard shows storage-shard-1-1 READY (1, green) again  =>  6s after the restart
+     ✔  the node's timeline over the test shows the red stretch (min 0) and ends green (1)  =>  min over last 51s =
+           0, now = 1
+     ✔  after: the restarted node's resync is recorded (count, records applied, duration on the dashboard)  =>
+           resyncs 1, missed writes applied 1, resync took 259 ms
+
+[PASS] test_x39_killing_the_read_replica_makes_failovers_rise  (8.2s)  covers: X39.failure
+       #39 demo moment, the 'failovers rise' part: kill the storage replica that SERVES a shard's reads while reads
+         keep coming -> reads switch to the other replica, the failover counter on the dashboard rises, the node is
+         counted down, and after its restart it is READY (green) again.
+     ·  BEFORE: reads of shard 1 are served by storage-shard-1-0
+     ·  KILL the read replica  =>  kubectl -n erms delete pod storage-shard-1-0
+     ·  RESTART  =>  automatic: the StatefulSet recreates the pod with the same name and volume
+     ✔  reads kept working: none failed while the replica was killed and came back  =>  21/21 succeeded (100%)
+     ✔  reads switched to the other replica of the shard  =>  {'storage-shard-1-0': 11, 'storage-shard-1-1': 10}
+     ✔  the dashboard's failover counter ROSE ('Read failovers' / 'Failures (per minute)' panels)  =>
+           erms_storage_failovers_total 1 -> 2
+     ✔  ... the same value through Grafana's own panel query  =>  sum(erms_storage_failovers_total) = 2
+     ✔  storage-shard-1-0 was counted DOWN (red on the node timeline)  =>  node-down events 1 -> 2
+     ✔  after: storage-shard-1-0 is READY (green) again on the dashboard  =>  erms_storage_node_up{node="storage-
+           shard-1-0"} = 1
+
+[PASS] test_x18_keda_is_installed  (0.7s)  covers: X18.install
+       #18: KEDA's components run in the cluster and serve the external-metrics API used by the HPA.
+     ✔  KEDA operator (keda-operator) is available  =>  ghcr.io/kedacore/keda:2.21.0
+     ✔  KEDA metrics API server (keda-metrics-apiserver) is available  =>  ghcr.io/kedacore/keda-metrics-
+           apiserver:2.21.0
+     ✔  KEDA admission webhooks (keda-admission) is available  =>  ghcr.io/kedacore/keda-admission-webhooks:2.21.0
+     ✔  CRD scaledobjects.keda.sh installed  =>  scaledobjects.keda.sh
+     ✔  CRD triggerauthentications.keda.sh installed  =>  triggerauthentications.keda.sh
+     ✔  the external metrics API (queue depth for the HPA) is Available  =>  True
+
+[PASS] test_x18_scaledobject_hpa_and_credentials  (1.0s)  covers: X18.scaledobject, X18.hpa, X18.secret
+       #18: the ScaledObject, the HPA KEDA creates from it, and where KEDA's broker credentials come from.
+     ✔  ScaledObject targets Deployment matching-service
+     ✔  between 2 and 6 pods  =>  min 2, max 6, polling every 5s
+     ✔  trigger: RabbitMQ queue matching.requests, 5 waiting messages per pod  =>  {'mode': 'QueueLength',
+           'protocol': 'amqp', 'queueName': 'matching.requests', 'value': '5'}
+     ✔  ScaledObject is Ready and not paused  =>  {'Ready': 'True', 'Active': 'False', 'Fallback': 'False', 'Paused':
+           'False', 'HPAActive': 'True'}
+     ✔  KEDA created HPA keda-hpa-matching-service (min 2, max 6) on an external queue metric  =>  s0-rabbitmq-
+           matching-requests
+     ✔  fast reaction: scale up immediately, scale down after 30 s (instead of the default 5 min)  =>  0 s / 30 s
+     ✔  no second autoscaler fights over matching-service  =>  ['keda-hpa-matching-service']
+     ✔  the old CPU-based HPA manifest is gone  =>  k8s/60-hpa-optional.yaml removed
+     ✔  KEDA reads the broker URL from Secret keda-rabbitmq (TriggerAuthentication)  =>  {'key': 'host', 'name':
+           'keda-rabbitmq', 'parameter': 'host'}
+     ✔  the Secret exists (contents not printed)  =>  112 base64 characters
+     ✔  no password / amqp URL in the manifest  =>  k8s/80-keda-autoscaling.yaml
+
+[PASS] test_x18_burst_scales_up_then_back_down  (169.8s)  covers: X18.up, X18.down, X18.safe, X18.visible
+       #18 demo moment: 200 requests pile up in RabbitMQ -> KEDA scales matching-service 2 -> 6 by itself, the queue
+         drains, and it scales back to 2; nothing is lost, nothing matched twice, the API stays up.
+     ✔  before: 2 matching pods, queue empty  =>  ['matching-service-5675cb9575-5gq7g', 'matching-
+           service-5675cb9575-xmkvr']
+     ✔  200 requests accepted and queued  =>  in 2.9s
+     ✔  RabbitMQ buffered the burst  =>  up to 188 messages waiting
+     ✔  KEDA scaled matching-service UP by itself as the queue grew  =>  HPA asked for more pods 15s after the burst
+           started
+     ✔  ... up to the maximum of 6 pods  =>  6 Ready pods 21s after the burst
+     ·  timeline (seconds, ready pods, desired)  =>  [(0, 2, 2), (15, 2, 6), (21, 6, 6), (99, 4, 6), (101, 4, 4),
+           (112, 2, 4), (115, 2, 2)]
+     ✔  the extra pods did real work (requests matched by pods added by KEDA)  =>  {'matching-
+           service-5675cb9575-xmkvr': 48, 'matching-service-5675cb9575-5gq7g': 44, 'matching-
+           service-5675cb9575-mc9hk': 27, 'matching-service-5675cb9575-d5rhs': 26, 'matching-
+           service-5675cb9575-xs9ss': 27, 'matching-service-5675cb9575-jd9z8': 28}
+     ✔  all 200 requests matched through the queue  =>  queue drained and all matched 76s after the burst
+     ✔  no request lost or matched twice: capacity exact  =>  availability 210 -> 10
+     ✔  KEDA scaled matching-service back DOWN to 2 after the queue drained  =>  2 pods again 144s after the burst
+           (68s after the last match)
+     ✔  the API stayed available the whole time  =>  239/239 succeeded (100%)
+     ✔  Prometheus recorded the scale-out (dashboard panel 'Autoscaling: matching pods vs queue depth')  =>  peak
+           matching pods seen by Prometheus: 6
+     ✔  ... and the scale-in back to 2  =>  count(up{job="matching-service"} == 1) = 2
+
+[PASS] test_x18_manual_pin_then_automatic_again  (175.4s)  covers: X18.manual
+       #18: with KEDA in charge a plain `kubectl scale` is undone; scripts/matching-replicas.sh pins the replica count
+         (paused-replicas) and hands it back to KEDA.
+     ✔  a plain `kubectl scale --replicas=5` is undone by KEDA's HPA (back to 2 with an empty queue)  =>  2 pods
+     ✔  matching-replicas.sh 3 pins 3 pods (annotation autoscaling.keda.sh/paused-replicas=3)  =>
+           ./scripts/matching-replicas.sh 3
+     ✔  the pin holds even with an empty queue (45 s later still 3 pods)  =>  ['matching-service-5675cb9575-2fjgz',
+           'matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']
+     ✔  matching-replicas.sh auto removes the pin: KEDA scales back to 2 and its HPA is active again  =>
+           ./scripts/matching-replicas.sh auto
+
+======================================================================================================================
+PART 2 - EVERY REQUIREMENT OF THE PDF AND THE TESTS THAT VERIFY IT
+======================================================================================================================
+
+EXTENSION #39 - Prometheus + Grafana monitoring
+  PASS        X39.metrics Every service exposes /metrics: request-service, matching-service, coordinator, all storage
+                nodes
+                          verified by: test_x39_every_service_exposes_metrics[compose],
+                            test_x39_every_service_exposes_metrics[k8s]
+  PASS        X39.rabbit  RabbitMQ's Prometheus plugin is scraped (queue depth, unacked, consumers)
+                          verified by: test_x39_prometheus_scrapes_every_component[compose],
+                            test_x39_prometheus_scrapes_every_component[k8s]
+  PASS        X39.scrape  Prometheus scrapes every component and every replica; all targets up
+                          verified by: test_x39_prometheus_scrapes_every_component[compose],
+                            test_x39_prometheus_scrapes_every_component[k8s]
+  PASS        X39.grafana Grafana starts with the Prometheus datasource and the ERMS dashboard provisioned
+                          verified by: test_x39_grafana_is_provisioned_and_secured[compose],
+                            test_x39_grafana_is_provisioned_and_secured[k8s]
+  PASS        X39.panels  Dashboard shows queue depth, time from request to match, failovers, shard health, node
+                up/down, resync duration, matching pods, API rate/latency/errors
+                          verified by: test_x39_dashboard_shows_everything_promised_with_data[compose],
+                            test_x39_dashboard_shows_everything_promised_with_data[k8s]
+  PASS        X39.nodata  Every query of every dashboard panel returns data (no 'No data' panels)
+                          verified by: test_x39_dashboard_shows_everything_promised_with_data[compose],
+                            test_x39_dashboard_shows_everything_promised_with_data[k8s]
+  PASS        X39.traffic Metrics follow real traffic: requests created / published / matched and the time-to-match
+                are recorded correctly
+                          verified by: test_x39_metrics_follow_real_traffic[compose],
+                            test_x39_metrics_follow_real_traffic[k8s]
+  PASS        X39.failure Demo: a stopped storage node turns DOWN (red) on the dashboard, failures are counted, it
+                turns READY (green) again after its resync and the resync duration is recorded
+                          verified by: test_x39_storage_failure_is_visible_on_the_dashboard[compose],
+                            test_x39_killing_the_read_replica_makes_failovers_rise[compose],
+                            test_x39_storage_failure_is_visible_on_the_dashboard[k8s],
+                            test_x39_killing_the_read_replica_makes_failovers_rise[k8s]
+  PASS        X39.secure  Grafana admin password from a Secret / .env; dashboards viewable read-only without login;
+                anonymous users cannot edit
+                          verified by: test_x39_grafana_is_provisioned_and_secured[compose],
+                            test_x39_grafana_is_provisioned_and_secured[k8s]
+  PASS        X39.both    Monitoring runs on both deployments (Docker Compose and Kubernetes)
+                          verified by: test_x39_monitoring_is_deployed[compose], test_x39_monitoring_is_deployed[k8s]
+
+EXTENSION #18 - KEDA autoscaling on RabbitMQ queue depth
+  PASS        X18.install KEDA is installed in the cluster (operator, metrics API server, admission webhooks)
+                          verified by: test_x18_keda_is_installed[compose](skipped), test_x18_keda_is_installed[k8s]
+  PASS        X18.scaledobject ScaledObject scales Deployment matching-service on queue matching.requests (2-6 pods, 5
+                waiting messages per pod) and is Ready
+                          verified by: test_x18_scaledobject_hpa_and_credentials[compose](skipped),
+                            test_x18_scaledobject_hpa_and_credentials[k8s]
+  PASS        X18.hpa     KEDA drives a HorizontalPodAutoscaler for matching-service; no conflicting autoscaler
+                          verified by: test_x18_scaledobject_hpa_and_credentials[compose](skipped),
+                            test_x18_scaledobject_hpa_and_credentials[k8s]
+  PASS        X18.secret  KEDA's broker credentials come from a Secret (TriggerAuthentication), not from the manifests
+                          verified by: test_x18_scaledobject_hpa_and_credentials[compose](skipped),
+                            test_x18_scaledobject_hpa_and_credentials[k8s]
+  PASS        X18.up      A burst of requests piling up in RabbitMQ scales matching-service up automatically (2 -> 6)
+                          verified by: test_x18_burst_scales_up_then_back_down[compose](skipped),
+                            test_x18_burst_scales_up_then_back_down[k8s]
+  PASS        X18.down    When the queue has drained matching-service scales back down to 2 automatically
+                          verified by: test_x18_burst_scales_up_then_back_down[compose](skipped),
+                            test_x18_burst_scales_up_then_back_down[k8s]
+  PASS        X18.safe    While pods are added and removed no request is lost, none matched twice, capacity exact, and
+                the API stays available
+                          verified by: test_x18_burst_scales_up_then_back_down[compose](skipped),
+                            test_x18_burst_scales_up_then_back_down[k8s]
+  PASS        X18.visible The autoscaling is visible in Prometheus / Grafana (matching pods vs queue depth)
+                          verified by: test_x18_burst_scales_up_then_back_down[compose](skipped),
+                            test_x18_burst_scales_up_then_back_down[k8s]
+  PASS        X18.manual  Manual scaling / stopping still works with KEDA (pin the replica count), then automatic
+                scaling resumes
+                          verified by: test_x18_manual_pin_then_automatic_again[compose](skipped),
+                            test_x18_manual_pin_then_automatic_again[k8s]
+
+======================================================================================================================
+ EXTENSION REQUIREMENTS: 19 listed (19 mandatory) -> PASS 19
+======================================================================================================================
+
+
+=====================================================================================================================
+ PART G - KEDA DEMO TRANSCRIPT (AUTO=1 ./scripts/keda-demo.sh, final run)
+=====================================================================================================================
+
+
+==== KEDA: autoscaling matching-service on RabbitMQ queue depth ====
+NAME               SCALETARGETKIND      SCALETARGETNAME    MIN   MAX   READY   ACTIVE   FALLBACK   PAUSED   TRIGGERS   AUTHENTICATIONS         AGE
+matching-service   apps/v1.Deployment   matching-service   2     6     True    False    False      False    rabbitmq   rabbitmq-trigger-auth   3h21m
+> rule: desired pods = ceil(messages waiting / 5), min 2, max 6; checked every 5 s
+NAME                        REFERENCE                     TARGETS     MINPODS   MAXPODS   REPLICAS   AGE
+keda-hpa-matching-service   Deployment/matching-service   0/5 (avg)   2         6         2          34s
+NAME                                READY   STATUS    RESTARTS   AGE
+matching-service-5675cb9575-5gq7g   1/1     Running   0          8m42s
+matching-service-5675cb9575-xmkvr   1/1     Running   0          11m
+
+==== Burst: 200 emergency requests at once ====
+> 200 requests accepted; they wait in RabbitMQ for the matching workers
+
+==== Scaling up while the queue is long ====
+  t=   0s  waiting in queue:   65   matching pods ready: 2   KEDA/HPA desired: 2
+  t=   4s  waiting in queue:  187   matching pods ready: 2   KEDA/HPA desired: 2
+  t=   8s  waiting in queue:  187   matching pods ready: 2   KEDA/HPA desired: 6
+  t=  10s  waiting in queue:  179   matching pods ready: 2   KEDA/HPA desired: 6
+  t=  14s  waiting in queue:  155   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  17s  waiting in queue:  126   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  21s  waiting in queue:  126   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  25s  waiting in queue:  110   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  29s  waiting in queue:  109   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  33s  waiting in queue:   80   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  37s  waiting in queue:   80   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  40s  waiting in queue:   59   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  42s  waiting in queue:   58   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  46s  waiting in queue:   86   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  51s  waiting in queue:   69   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  54s  waiting in queue:   69   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  58s  waiting in queue:   64   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  61s  waiting in queue:   38   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  65s  waiting in queue:   38   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  68s  waiting in queue:   14   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  70s  waiting in queue:    0   matching pods ready: 6   KEDA/HPA desired: 6
+> queue drained after ~71s; peak matching pods: 6
+NAME                                READY   STATUS    RESTARTS   AGE
+matching-service-5675cb9575-5gq7g   1/1     Running   0          9m56s
+matching-service-5675cb9575-9wb9x   1/1     Running   0          65s
+matching-service-5675cb9575-c94bn   1/1     Running   0          65s
+matching-service-5675cb9575-cf8b2   1/1     Running   0          65s
+matching-service-5675cb9575-nnkb2   1/1     Running   0          65s
+matching-service-5675cb9575-xmkvr   1/1     Running   0          12m
+
+==== Scaling back down once the queue is empty ====
+  t=  71s  waiting in queue:    0   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  76s  waiting in queue:    0   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  82s  waiting in queue:    0   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  88s  waiting in queue:    0   matching pods ready: 6   KEDA/HPA desired: 6
+  t=  93s  waiting in queue:    0   matching pods ready: 4   KEDA/HPA desired: 4
+  t=  99s  waiting in queue:    0   matching pods ready: 4   KEDA/HPA desired: 4
+  t= 103s  waiting in queue:    0   matching pods ready: 4   KEDA/HPA desired: 2
+  t= 109s  waiting in queue:    0   matching pods ready: 2   KEDA/HPA desired: 2
+  t= 115s  waiting in queue:    0   matching pods ready: 2   KEDA/HPA desired: 2
+  t= 121s  waiting in queue:    0   matching pods ready: 2   KEDA/HPA desired: 2
+  t= 126s  waiting in queue:    0   matching pods ready: 2   KEDA/HPA desired: 2
+  t= 130s  waiting in queue:    0   matching pods ready: 2   KEDA/HPA desired: 2
+  t= 137s  waiting in queue:    0   matching pods ready: 2   KEDA/HPA desired: 2
+NAME                                READY   STATUS    RESTARTS   AGE
+matching-service-5675cb9575-5gq7g   1/1     Running   0          11m
+matching-service-5675cb9575-xmkvr   1/1     Running   0          13m
+
+==== Result ====
+  requests matched:        200 / 200
+  peak matching pods:      6  (started with 2)
+  back to:                 2 pods
+  work per matching pod:
+         43 matching-service-5675cb9575-5gq7g
+         28 matching-service-5675cb9575-9wb9x
+         32 matching-service-5675cb9575-c94bn
+         28 matching-service-5675cb9575-cf8b2
+         29 matching-service-5675cb9575-nnkb2
+         40 matching-service-5675cb9575-xmkvr
+  resource capacity left:  10 of 210
+> Grafana http://192.168.49.2:30030 -> 'Autoscaling: matching pods vs queue depth' shows the same run

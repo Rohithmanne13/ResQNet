@@ -1,6 +1,13 @@
 """Resource capacity operations, done with compare-and-set so that concurrent
-matchers (multiple matching-service pods) never over-assign a resource."""
+matchers (multiple matching-service pods) never over-assign a resource.
+
+A compare-and-set conflict only means another matcher changed the resource first, so the operation re-reads
+and retries (with a short random back-off to spread out contending matchers) until it succeeds or the
+resource has no capacity left; it never reports "no capacity" just because it lost a race.
+"""
+import asyncio
 import logging
+import random
 
 from .models import now_iso, resource_key
 from .storage_client import Conflict, NotFound, StorageClient
@@ -8,11 +15,18 @@ from .storage_client import Conflict, NotFound, StorageClient
 log = logging.getLogger("resources")
 
 
+CAS_ATTEMPTS = 60
+
+
+async def _backoff(attempt: int) -> None:
+    await asyncio.sleep(random.uniform(0, min(0.02 * (attempt + 1), 0.25)))
+
+
 async def try_assign(store: StorageClient, resource_id: str, request_id: str, req_type: str,
-                     attempts: int = 4) -> bool:
+                     attempts: int = CAS_ATTEMPTS) -> bool:
     """Atomically take one unit of capacity from a resource. False if it is no longer available."""
     key = resource_key(resource_id)
-    for _ in range(attempts):
+    for attempt in range(attempts):
         try:
             item = await store.get(key)
         except NotFound:
@@ -31,14 +45,15 @@ async def try_assign(store: StorageClient, resource_id: str, request_id: str, re
             await store.put(key, res, if_version=item["version"])
             return True
         except Conflict:
-            continue  # someone else modified it; re-read and retry
+            await _backoff(attempt)   # someone else modified it; re-read and retry
+    log.warning("gave up claiming %s for %s after %d conflicting attempts", resource_id, request_id, attempts)
     return False
 
 
-async def release(store: StorageClient, resource_id: str, request_id: str, attempts: int = 6) -> bool:
+async def release(store: StorageClient, resource_id: str, request_id: str, attempts: int = CAS_ATTEMPTS) -> bool:
     """Give back the capacity a request held on a resource (idempotent)."""
     key = resource_key(resource_id)
-    for _ in range(attempts):
+    for attempt in range(attempts):
         try:
             item = await store.get(key)
         except NotFound:
@@ -57,6 +72,6 @@ async def release(store: StorageClient, resource_id: str, request_id: str, attem
             log.info("released resource %s from request %s", resource_id, request_id)
             return True
         except Conflict:
-            continue
+            await _backoff(attempt)
     log.error("failed to release resource %s from request %s", resource_id, request_id)
     return False

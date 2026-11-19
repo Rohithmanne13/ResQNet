@@ -1,9 +1,12 @@
-# Local deployment: 1 coordinator, 3 shards x 2 replicas, RabbitMQ, request + matching services.
-#   ./scripts/init-env.sh          # once: writes .env with a random RabbitMQ password (git-ignored)
+# Local deployment: 1 coordinator, 3 shards x 2 replicas, RabbitMQ, request + matching services,
+# plus monitoring (Prometheus + Grafana).
+#   ./scripts/init-env.sh          # once: writes .env with random RabbitMQ / Grafana passwords (git-ignored)
 #   docker compose up -d --build
 #   API:            http://localhost:8080/docs
 #   Coordinator:    http://localhost:8001/cluster
 #   RabbitMQ UI:    http://localhost:15672  (user/password from .env)
+#   Grafana:        http://localhost:3000   (dashboard "ERMS overview"; viewing needs no login, admin password in .env)
+#   Prometheus:     http://localhost:9090
 
 x-storage-node: &storage-node
   image: erms/storage-node:latest
@@ -22,6 +25,7 @@ services:
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit collect_statistics_interval 1000"
     volumes: ["rabbitmq:/var/lib/rabbitmq"]   # durable queues + persistent messages survive restarts
     ports: ["5672:5672", "15672:15672"]
+    restart: unless-stopped     # comes back after a Docker / host restart, like every other service
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
@@ -100,7 +104,37 @@ services:
       coordinator: { condition: service_started }
     restart: unless-stopped
 
+  # ------------------------------------------------------------------ monitoring (extension #39)
+  prometheus:
+    image: prom/prometheus:v3.15.1
+    command: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.retention.time=2d",
+              "--web.enable-lifecycle"]
+    volumes:
+      - ./monitoring/prometheus/prometheus-compose.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus:/prometheus
+    ports: ["9090:9090"]
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:13.2.5
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run ./scripts/init-env.sh first}
+      GF_AUTH_ANONYMOUS_ENABLED: "true"          # the dashboard can be watched without logging in (read-only)
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/erms-overview.json
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]
+    restart: unless-stopped
+
 volumes:
+  prometheus: {}
   rabbitmq: {}
   storage-0a: {}
   storage-0b: {}

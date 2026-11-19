@@ -1,0 +1,11 @@
+# Loads every dashboard JSON in /var/lib/grafana/dashboards into the "ERMS" folder at start-up.
+apiVersion: 1
+providers:
+  - name: erms
+    folder: ERMS
+    type: file
+    disableDeletion: true
+    allowUiUpdates: true
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards

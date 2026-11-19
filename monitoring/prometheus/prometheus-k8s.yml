@@ -1,0 +1,35 @@
+# Prometheus scrape configuration for Kubernetes (loaded into ConfigMap prometheus-config by k8s/deploy.sh).
+# Pods are discovered through the Kubernetes API (namespace erms) and scraped when annotated with
+#   prometheus.io/scrape: "true"   prometheus.io/port: "8000"
+# so pods created by scaling (manual or KEDA) or by automatic recovery are picked up within seconds.
+global:
+  scrape_interval: 5s
+  evaluation_interval: 5s
+
+scrape_configs:
+  - job_name: erms-pods
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces: { names: [erms] }
+    relabel_configs:
+      - { source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape], regex: "true", action: keep }
+      - { source_labels: [__meta_kubernetes_pod_phase], regex: Running, action: keep }
+      - source_labels: [__meta_kubernetes_pod_ip, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        regex: "(.+);(.+)"
+        replacement: "$1:$2"
+        target_label: __address__
+      # job = the app label (coordinator, storage-node, request-service, matching-service), as in Compose
+      - { source_labels: [__meta_kubernetes_pod_label_app], target_label: job }
+      - { source_labels: [__meta_kubernetes_pod_name], target_label: instance }
+      - { source_labels: [__meta_kubernetes_pod_name], target_label: pod }
+
+  # Per-queue depth and consumer counts from RabbitMQ's built-in rabbitmq_prometheus plugin
+  - job_name: rabbitmq
+    metrics_path: /metrics/detailed
+    params: { family: [queue_coarse_metrics, queue_consumer_count] }
+    static_configs: [{ targets: ["rabbitmq.erms.svc.cluster.local:15692"] }]
+    relabel_configs:
+      - { target_label: instance, replacement: rabbitmq }
+
+  - job_name: prometheus
+    static_configs: [{ targets: ["localhost:9090"] }]

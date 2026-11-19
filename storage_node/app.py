@@ -24,9 +24,11 @@ from typing import Any
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query
+from prometheus_client import Counter, Gauge, Histogram
 from pydantic import BaseModel
 
 from common.logging_setup import setup
+from common.metrics import instrument
 
 NODE_ID = os.getenv("NODE_ID") or socket.gethostname()
 SHARD_ID = int(os.getenv("SHARD_ID", "0"))
@@ -98,6 +100,25 @@ class Store:
 
 store = Store(os.path.join(DATA_DIR, f"{NODE_ID}.db"))
 state = {"status": "starting", "registered": False, "last_sync": None}
+
+# ----------------------------------------------------------------------------- Prometheus metrics
+_L = {"node": NODE_ID, "shard": str(SHARD_ID)}
+SYNC_SECONDS = Histogram("erms_storage_sync_duration_seconds", "Time to (re)synchronize from peers after joining",
+                         ["node", "shard"], buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60))
+LAST_SYNC = Gauge("erms_storage_last_sync_duration_seconds", "Duration of the most recent resync", ["node", "shard"])
+SYNCS = Counter("erms_storage_syncs_total", "Resync attempts", ["node", "shard", "result"])
+SYNC_APPLIED = Counter("erms_storage_sync_records_applied_total", "Records changed by resyncs (the missed writes)",
+                       ["node", "shard"])
+SYNC_RECEIVED = Counter("erms_storage_sync_records_received_total", "Records received from peers during resyncs",
+                        ["node", "shard"])
+for _r in ("ok", "failed", "local"):
+    SYNCS.labels(result=_r, **_L)
+SYNC_APPLIED.labels(**_L)
+SYNC_RECEIVED.labels(**_L)
+Gauge("erms_storage_local_keys", "Live records in this node's local store", ["node", "shard"]) \
+    .labels(**_L).set_function(store.count)
+Gauge("erms_storage_local_ready", "1 = this node reports itself ready", ["node", "shard"]) \
+    .labels(**_L).set_function(lambda: 1.0 if state["status"] == "ready" else 0.0)
 _sync_task: asyncio.Task | None = None
 _wake = asyncio.Event()   # set when the status changes, to report it to the coordinator immediately
 
@@ -107,6 +128,8 @@ async def sync_from(client: httpx.AsyncClient, peers: list[str]) -> None:
     No peers = the coordinator decided this node is the only copy: serve local data."""
     if not peers:
         state["status"] = "ready"
+        SYNCS.labels(result="local", **_L).inc()
+        LAST_SYNC.labels(**_L).set(0)
         log.info("no peers to sync from in shard %d; serving local data (%d keys)", SHARD_ID, store.count())
         return
     state["status"] = "syncing"
@@ -122,12 +145,19 @@ async def sync_from(client: httpx.AsyncClient, peers: list[str]) -> None:
         except Exception as e:
             log.warning("sync from %s failed: %r", peer, e)
     if not ok:
+        SYNCS.labels(result="failed", **_L).inc()
         log.warning("sync failed from all peers; will re-register")
         state["registered"] = False
         return
     state["status"] = "ready"
+    took = time.time() - t0
     state["last_sync"] = {"peers": ok, "received": received, "applied": applied,
-                          "seconds": round(time.time() - t0, 3), "at": time.time()}
+                          "seconds": round(took, 3), "at": time.time()}
+    SYNCS.labels(result="ok", **_L).inc()
+    SYNC_SECONDS.labels(**_L).observe(took)
+    LAST_SYNC.labels(**_L).set(took)
+    SYNC_APPLIED.labels(**_L).inc(applied)
+    SYNC_RECEIVED.labels(**_L).inc(received)
     log.info("SYNC complete from %s: received %d records, applied %d updates; now READY (%d keys)",
              ", ".join(ok), received, applied, store.count())
     _wake.set()
@@ -196,6 +226,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title=f"Storage node {NODE_ID}", lifespan=lifespan)
+instrument(app, "storage-node")
 
 
 class PutBody(BaseModel):

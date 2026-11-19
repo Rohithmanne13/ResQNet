@@ -116,6 +116,56 @@ def test_matcher_reuses_a_claim_it_already_holds():
     assert store.value(resource_key(other))["availability"] == 5   # no second unit taken
 
 
+class InterleavingStore(FakeStore):
+    """Yields to the event loop on every call, so concurrent matchers interleave like real network calls."""
+
+    async def get(self, key):
+        await asyncio.sleep(0)
+        return await super().get(key)
+
+    async def put(self, key, value, if_version=None):
+        await asyncio.sleep(0)
+        return await super().put(key, value, if_version)
+
+    async def list(self, prefix):
+        await asyncio.sleep(0)
+        return await super().list(prefix)
+
+
+def test_concurrent_matches_of_the_same_request_keep_its_unit():
+    """8 simultaneous matches of ONE request share one claim; the losers must not release the unit the winner
+    committed with (that left the request 'matched' while the resource no longer listed it)."""
+    from matching_service.matcher import match_request
+    store = InterleavingStore()
+    rid = put_resource(store, availability=5)
+    put_request(store, "req-1")
+
+    async def race():
+        return await asyncio.gather(*(match_request(store, "req-1", source="test") for _ in range(8)))
+    results = run(race())
+    assert sorted(r["result"] for r in results).count("matched") >= 1
+    req, res = store.value(request_key("req-1")), store.value(resource_key(rid))
+    assert req["status"] == "matched" and req["assigned_resource"] == rid
+    assert res["assigned_requests"] == ["req-1"] and res["availability"] == 4
+
+
+def test_contended_matches_never_report_false_no_capacity():
+    """30 different requests racing for 20 units: exactly 20 matched, 10 no_match (a lost compare-and-set race
+    is retried, never reported as 'no capacity'), and the resource lists exactly the matched ones."""
+    from matching_service.matcher import match_request
+    store = InterleavingStore()
+    rid = put_resource(store, availability=20)
+    ids = [put_request(store, f"req-{i}") for i in range(30)]
+
+    async def race():
+        return await asyncio.gather(*(match_request(store, i, source="test") for i in ids))
+    results = run(race())
+    matched = {r["request_id"] for r in results if r["result"] == "matched"}
+    assert len(matched) == 20 and sum(r["result"] == "no_match" for r in results) == 10
+    res = store.value(resource_key(rid))
+    assert res["availability"] == 0 and set(res["assigned_requests"]) == matched and len(res["assigned_requests"]) == 20
+
+
 # ----------------------------------------------------------------------------- capacity reconciler
 def make_reconciler(store, grace=20):
     from matching_service.reconciler import Reconciler
@@ -309,3 +359,23 @@ def test_match_proxy_unreachable_is_503_and_ids_are_trimmed(request_api):
     client = request_api(down)
     assert client.post("/match/%20req-1%20").status_code == 503
     assert seen == ["/match/req-1"]
+
+
+def test_timestamps_never_run_backwards_when_the_clock_is_stepped_back(monkeypatch):
+    """WSL / NTP can step the system clock back a few seconds; a record's history must still be in order."""
+    from datetime import datetime as real_datetime, timedelta, timezone as tz
+    import common.models as m
+    clock = [real_datetime(2026, 1, 1, 12, 0, 10, tzinfo=tz.utc)]
+
+    class FakeDatetime(real_datetime):
+        @classmethod
+        def now(cls, tzinfo=None):
+            return clock[0]
+    monkeypatch.setattr(m, "datetime", FakeDatetime)
+    monkeypatch.setattr(m, "_last_now", [])        # fresh floor (other tests already stamped real times)
+    first = m.now_iso()
+    clock[0] -= timedelta(seconds=3)               # clock stepped back
+    second = m.now_iso()
+    clock[0] += timedelta(seconds=5)               # and forward again
+    third = m.now_iso()
+    assert first == "2026-01-01T12:00:10.000+00:00" and second == first and third == "2026-01-01T12:00:12.000+00:00"

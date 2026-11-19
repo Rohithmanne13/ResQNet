@@ -6,7 +6,7 @@ spec:
   strategy: { type: Recreate }
   selector: { matchLabels: { app: coordinator } }
   template:
-    metadata: { labels: { app: coordinator } }
+    metadata: { labels: { app: coordinator }, annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8000" } }
     spec:
       containers:
         - name: coordinator

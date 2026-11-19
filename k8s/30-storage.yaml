@@ -15,7 +15,7 @@ spec:
   podManagementPolicy: Parallel
   selector: { matchLabels: { app: storage-node, shard: "0" } }
   template:
-    metadata: { labels: { app: storage-node, shard: "0" } }
+    metadata: { labels: { app: storage-node, shard: "0" }, annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8000" } }
     spec:
       containers:
         - name: storage-node
@@ -60,7 +60,7 @@ spec:
   podManagementPolicy: Parallel
   selector: { matchLabels: { app: storage-node, shard: "1" } }
   template:
-    metadata: { labels: { app: storage-node, shard: "1" } }
+    metadata: { labels: { app: storage-node, shard: "1" }, annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8000" } }
     spec:
       containers:
         - name: storage-node
@@ -105,7 +105,7 @@ spec:
   podManagementPolicy: Parallel
   selector: { matchLabels: { app: storage-node, shard: "2" } }
   template:
-    metadata: { labels: { app: storage-node, shard: "2" } }
+    metadata: { labels: { app: storage-node, shard: "2" }, annotations: { prometheus.io/scrape: "true", prometheus.io/port: "8000" } }
     spec:
       containers:
         - name: storage-node

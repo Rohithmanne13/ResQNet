@@ -3,7 +3,7 @@
 #   docker compose up -d --build && ./scripts/demo.sh        (AUTO=1 for no pauses)
 set -euo pipefail
 cd "$(dirname "$0")/.."
-[ -f .env ] || ./scripts/init-env.sh
+./scripts/init-env.sh >/dev/null   # creates .env or adds missing secrets (safe to repeat)
 source scripts/lib.sh
 STOP=${STOP:-"docker compose stop"}
 START=${START:-"docker compose start"}
@@ -94,3 +94,5 @@ $LOGS coordinator "$VICTIM" 2>&1 | grep -E "DOWN|RE-REGISTERED|RECOVERED|SYNC|RE
 info "after recovery: served by the recovered node again, with the update it missed (status cancelled):"; get "/requests/${IDS[0]}" | show request
 
 step "Done. Kubernetes recovery/scaling: ./scripts/k8s-demo.sh"
+info "Monitoring: Grafana http://localhost:3000 (dashboard 'ERMS overview': the node that was stopped shows red, then green;"
+info "            queue depth, time to match, failovers, resync time) - Prometheus http://localhost:9090"
