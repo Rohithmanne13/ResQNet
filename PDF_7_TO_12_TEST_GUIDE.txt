@@ -1,0 +1,532 @@
+=====================================================================================================================
+ ERMS - VIVA TEST GUIDE FOR PDF SECTIONS 7 - 12
+ "Emergency Response Matching.pdf":  §7 Request Processing   §8 Failure Handling   §9 Docker and Kubernetes
+                                     §10 Required Demonstration   §11 Testing   §12 Left to Your Design
+ Every bullet / step of these sections, in the PDF's order: how to show it, the CORRECT output, and WHY.
+=====================================================================================================================
+
+ HOW TO READ EACH ITEM
+   PDF     the exact requirement from the PDF
+   DO      type the lines starting with "$ " (without the "$ ")
+   EXPECT  the correct output / behaviour
+   WHY     why that output is correct (what to say in the viva)
+   AUTO    the automated test that proves the same thing   (run:  ./scripts/spec-test.sh k8s -k NAME)
+
+ All outputs below were produced on the running Kubernetes system on 2026-11-20.
+ The viva runs on KUBERNETES. "Compose:" lines are only needed if you show Docker Compose instead
+ (never run both at once).
+
+
+=====================================================================================================================
+ STEP 0 - SET UP THE TERMINAL (once)
+=====================================================================================================================
+$ cd /mnt/c/Users/rohit/Downloads/Cloud_Computing_Project/Emergency-Response-Matching
+$ export PATH="$HOME/.local/bin:$PATH"
+$ minikube start
+$ kubectl -n erms get pods                     # wait until all 16 pods show 1/1 Running
+$ source scripts/cli.sh k8s                    # helpers: call / ccall / last_id / field / cluster / queue / prom
+$ newplace() { read LAT LON <<< "$(python3 -c 'import random; print(round(random.uniform(-60,-20),4), round(random.uniform(-160,-100),4))')"; echo "test place: $LAT, $LON"; }
+$ loc() { python3 -c "import sys; print('{\"lat\": %.5f, \"lon\": %.5f}' % ($LAT + float(sys.argv[1]) / 111.0, $LON))" "${1:-0}"; }
+$ newplace
+#   newplace = a fresh, empty spot on the map (so old data never interferes); loc N = that spot, N km north.
+#   call prints "HTTP <code>" + the JSON answer; last_id = the id from the last answer.
+#   Browser (optional, 2nd terminal: python3 scripts/expose.py): web UI http://localhost:30088,
+#   RabbitMQ http://localhost:30672, Grafana http://localhost:30030
+
+
+=====================================================================================================================
+ §7  REQUEST PROCESSING
+=====================================================================================================================
+ PDF  "When an emergency request requiring a resource match is created, the system should process it
+       asynchronously" - steps 1 to 6, matching on at least resource type and location.
+
+ We make the 6 steps VISIBLE by pausing the Matching Service, so the message is seen waiting in RabbitMQ.
+
+ PREPARE: a resource to match against
+ $ call POST /resources '{"type":"water","kind":"ngo","name":"NGO water tanker","availability":3,"location":'"$(loc 2)"'}'
+ $ T=$(last_id)
+ $ ./scripts/matching-replicas.sh 0            # pause the Matching Service (0 pods)
+                                               # Compose: docker compose stop matching-service
+
+ ---- STEP 1  "The client submits an emergency request."
+ DO      $ call POST /requests '{"type":"water","details":"Flood victim needs drinking water","priority":"high","location":'"$(loc 0)"'}'
+         $ Q=$(last_id)
+ EXPECT  HTTP 201 immediately, "status": "pending", "queued": true.
+ WHY     The client (terminal / web UI) sends one HTTP call to the Request Service and gets an answer at once -
+         it does NOT wait for matching. That is what "asynchronous" means.
+
+ ---- STEP 2  "The Request Service stores the request."
+ DO      $ call GET /requests/$Q
+ EXPECT  HTTP 200, the same request; "_storage": "shard": 0/1/2, "served_by": a storage node of that shard.
+ WHY     The request was written to distributed storage (both replicas of its shard) BEFORE it was published,
+         so it can never be lost - even if RabbitMQ were down.
+
+ ---- STEP 3  "The request is published to RabbitMQ."
+ DO      $ queue
+         $ prom 'sum(erms_requests_published_total{result="ok"})'
+ EXPECT  queue matching.requests  ready=1  unacked=0  consumers=0   (the message is waiting)
+         the published counter went up by 1.
+ WHY     The Request Service published a "request.created" message to exchange erms.requests; it is routed to
+         the durable queue matching.requests. Nobody consumes it right now, so it waits there safely.
+
+ ---- STEP 4  "The Matching Service consumes the message."
+ DO      $ ./scripts/matching-replicas.sh auto          # Compose: docker compose start matching-service
+         $ sleep 20
+         $ queue
+ EXPECT  queue matching.requests  ready=0  unacked=0  consumers=2
+ WHY     The 2 matching pods subscribe to the queue again and one of them takes the waiting message (ready
+         1 -> 0). It acknowledges the message only after the work is done, so a crash would re-deliver it.
+
+ ---- STEP 5  "A suitable available resource is identified."
+ ---- STEP 6  "The resource is assigned and the corresponding statuses are updated."
+ DO      $ call GET /requests/$Q
+         $ call GET /resources/$T
+ EXPECT  request:  "status": "matched", "assigned_resource": res-water-..., "assignment": resource_name
+                   "NGO water tanker", "distance_km": ~2.0, "matched_by": matching-service-<pod>, "via": "queue";
+                   history: pending (by request-service-<pod>) -> matched (by matching-service-<pod>)
+         resource: "availability" 3 -> 2, the request listed in assigned_requests
+ WHY     Step 5: the worker searched resources of the same TYPE that are available, have free units and are
+         within 50 km, and picked the NEAREST. Step 6: it took one unit of the resource (claimed safely with
+         compare-and-set) and set the request to "matched" - BOTH records updated in storage. "via": "queue"
+         proves it was the RabbitMQ path.
+ AUTO    test_flood_victim_needs_drinking_water_end_to_end
+
+ ---- MATCHING CONSIDERS RESOURCE TYPE AND LOCATION
+ DO      $ newplace
+         $ call POST /resources '{"type":"water","name":"Tanker NEAR","availability":2,"location":'"$(loc 2)"'}'
+         $ call POST /resources '{"type":"water","name":"Tanker FAR","availability":5,"location":'"$(loc 10)"'}'
+         $ call POST /resources '{"type":"food","name":"Food truck (closest, wrong type)","availability":5,"location":'"$(loc 0)"'}'
+         $ call POST /requests '{"type":"water","details":"type + location test","auto_match":false,"location":'"$(loc 0)"'}'
+         $ call POST /match/$(last_id)
+ EXPECT  HTTP 200, matched to "Tanker NEAR", distance_km ~2.0.
+ WHY     TYPE: the food truck at 0 km is ignored (wrong type). LOCATION: of the two water tankers the nearer one
+         wins, even though the far one has more units. Distance = haversine (great-circle) distance.
+ DO      $ newplace
+         $ call POST /resources '{"type":"rescue","name":"Boat 60 km","availability":1,"location":'"$(loc 60)"'}'
+         $ call POST /requests '{"type":"rescue","details":"distance limit","auto_match":false,"location":'"$(loc 0)"'}'
+         $ RQ=$(last_id); call POST /match/$RQ
+         $ call POST /resources '{"type":"rescue","name":"Boat 40 km","availability":1,"location":'"$(loc 40)"'}'
+         $ call POST /match/$RQ
+ EXPECT  first: HTTP 409 "no suitable available resource"; after adding the 40 km boat: HTTP 200, distance ~40.
+ WHY     Our strategy ("the exact matching strategy is left to the students"): same type, status available,
+         free capacity, within 50 km, nearest first, then most free units. Help 60 km away is too far.
+ AUTO    test_matching_considers_resource_type, test_matching_considers_location
+
+
+=====================================================================================================================
+ §8  FAILURE HANDLING
+=====================================================================================================================
+ PDF  "Storage nodes should periodically report their availability to the coordinator using heartbeat messages."
+ DO      $ cluster
+         $ sleep 4; cluster
+ EXPECT  6 nodes, all "ready"; the "heartbeat" column is always below ~2 s and resets every time you look.
+ WHY     Every storage node sends POST /internal/nodes/heartbeat to the coordinator every 2 s.
+ AUTO    test_internal_heartbeats_are_periodic
+
+ ---- BEFORE THE FAILURE
+ DO      $ for i in $(seq 1 30); do call POST /requests '{"type":"food","details":"written BEFORE the failure","auto_match":false,"location":{"lat":9.93,"lon":76.26}}' >/dev/null; [ "$(field 'd["_storage"]["shard"]')" = 1 ] && break; done; K1=$(last_id); echo "$K1 is on shard 1"
+         $ field 'd["_storage"]'
+         $ call GET /requests/$K1 | grep served_by
+         $ cluster
+ EXPECT  _storage: replicas ['storage-shard-1-0', 'storage-shard-1-1'], degraded False (BOTH copies written).
+         served_by storage-shard-1-0.  cluster: both shard-1 nodes "ready" with the SAME key count.
+
+ ---- STOP THE NODE (the PDF: "stopping the corresponding container or Kubernetes pod")
+ DO      $ kubectl -n erms scale sts/storage-shard-1 --replicas=1      # stops pod storage-shard-1-1
+                                                                       # Compose: docker compose stop storage-1b
+         $ sleep 10
+
+ PDF  "Detect unavailable storage nodes."
+ DO      $ cluster
+         $ kubectl -n erms logs deploy/coordinator --since=60s | grep "NODE DOWN"
+ EXPECT  storage-shard-1-1  down  (heartbeat ~11 s ago).  Log: "NODE DOWN: storage-shard-1-1 (shard 1) - no
+         heartbeat for 7.0s".
+ WHY     No heartbeat for 6 s (3 missed beats) -> the coordinator marks the node down. A failed call to a node
+         also marks it down immediately.
+
+ PDF  "Use an available replica when required data remains accessible."
+ DO      $ call GET /requests/$K1 | grep served_by
+         $ ccall GET /health
+ EXPECT  HTTP 200, served_by storage-shard-1-0.  Coordinator: healthy_shards [0, 1, 2].
+ WHY     Shard 1 still has one ready copy with all the data, so reads are served from that replica; the shard
+         counts as healthy.
+
+ PDF  "Avoid routing new requests to failed nodes."  +  "Continue processing when sufficient replicas are available."
+ DO      $ for i in $(seq 1 30); do call POST /requests '{"type":"food","details":"written DURING the failure","auto_match":false,"location":{"lat":9.93,"lon":76.26}}' >/dev/null; [ "$(field 'd["_storage"]["shard"]')" = 1 ] && break; done; K2=$(last_id)
+         $ field 'd["_storage"]'
+         $ call PUT /requests/$K1/status '{"status":"cancelled"}' | head -1
+ EXPECT  the new request: HTTP 201, replicas ['storage-shard-1-0'] ONLY, degraded True.
+         the status update: HTTP 200.
+ WHY     The coordinator sends new writes only to live nodes - the failed node is skipped (avoid routing). One
+         live copy is enough to keep working (continue processing); "degraded" honestly says the 2nd copy is
+         missing and will be filled in on recovery.
+
+ ---- RESTART THE NODE
+ DO      $ kubectl -n erms scale sts/storage-shard-1 --replicas=2      # Compose: docker compose start storage-1b
+         $ kubectl -n erms rollout status sts/storage-shard-1
+         $ sleep 6
+
+ PDF  "Synchronize required data when a failed node recovers."   ---- AFTER THE FAILURE
+ DO      $ cluster
+         $ kubectl -n erms logs storage-shard-1-1 | grep "SYNC complete" | tail -1
+                                                    # Compose: docker compose logs storage-1b | grep "SYNC complete" | tail -1
+         $ call GET /requests/$K2 | grep -E 'details|served_by'
+ EXPECT  storage-shard-1-1 "ready" again with the SAME key count as storage-shard-1-0.
+         Log: "SYNC complete from http://...: received N records, applied 2 updates; now READY".
+         K2 ("written DURING the failure") is readable.
+ WHY     On return the node registers, the coordinator tells it to sync, and it copies a snapshot from its ready
+         partner, merging by version (newest wins). "applied 2 updates" = exactly what it missed: the new request
+         K2 and the cancel of K1. It serves reads only AFTER the sync, so it never returns stale data.
+
+ PDF  "The demonstration should show system behavior before, during, and after the failure."
+ ->   the three blocks above.  Same on the pod that SERVES the reads (Kubernetes recreates it by itself):
+ DO      $ kubectl -n erms delete pod storage-shard-1-0
+         $ call GET /requests/$K1 | grep served_by
+         $ kubectl -n erms wait --for=condition=Ready pod/storage-shard-1-0 --timeout=120s; sleep 5; cluster
+ EXPECT  the read still works, now served_by storage-shard-1-1; the pod comes back (same name, same disk),
+         resyncs and is "ready".
+ WHY     Reads fail over to the other replica; the StatefulSet recreates the pod with its persistent volume.
+ AUTO    test_storage_node_failure_before_during_after, test_k8s_storage_pod_killed_reads_fail_over_then_resync
+ Grafana (optional, http://localhost:30030): during the failure the node turns RED, "Read failovers" rises;
+         after the restart it turns GREEN.
+
+
+=====================================================================================================================
+ §9.1  DOCKER - MANDATORY
+=====================================================================================================================
+ PDF  "Create Dockerfiles for the required services."
+ DO      $ ls */Dockerfile
+         $ cat coordinator/Dockerfile
+ EXPECT  coordinator/ matching_service/ request_service/ storage_node/ frontend/ - one Dockerfile each.
+         Dockerfile: FROM python:3.12-slim, install requirements, copy the code, EXPOSE 8000, start uvicorn.
+ WHY     Each service is packaged with exactly what it needs to run, the same way everywhere.
+
+ PDF  "Build Docker images."
+ DO      $ docker build -f coordinator/Dockerfile -t erms/coordinator:latest .
+         $ docker images | grep erms
+ EXPECT  the build finishes ("Successfully tagged ..." / a sha256 id); erms/coordinator, erms/request-service,
+         erms/matching-service, erms/storage-node (165 MB each) and erms/frontend.
+ WHY     An image = the Dockerfile's result; built from the project root because all services share common/.
+         (./k8s/deploy.sh and "docker compose build" build all of them.)
+
+ PDF  "Run application components as containers."
+ DO      $ minikube ssh "sudo crictl ps | head -1; sudo crictl ps | grep -E 'coordinator|request-service|storage-node'"
+         Compose: $ docker compose ps
+ EXPECT  running containers: coordinator, request-service x2, storage-node x6 (state "Running").
+         Compose: 14 containers "running" (coordinator, storage-0a..2b, request-service, matching-service x2,
+         rabbitmq, prometheus, grafana, frontend).
+ WHY     Every component runs as a container started from its image (on Kubernetes, inside pods).
+
+ PDF  "Configure communication between containers."
+ DO      $ kubectl -n erms exec deploy/request-service -- python -c "import urllib.request; print(urllib.request.urlopen('http://coordinator:8000/health').read().decode())"
+         Compose: $ docker compose exec request-service python -c "import urllib.request; print(urllib.request.urlopen('http://coordinator:8000/health').read().decode())"
+ EXPECT  {"status":"ok","healthy_shards":[0,1,2],"nodes":6}
+ WHY     Containers reach each other by service NAME ("coordinator", "rabbitmq", "matching-service"), resolved by
+         Docker's / Kubernetes' DNS - never by fixed IP addresses. Addresses are configured via environment
+         variables (COORDINATOR_URL, RABBITMQ_URL, MATCHING_SERVICE_URL).
+ AUTO    test_dockerfiles_for_every_service, test_docker_images_are_built, test_components_run_as_containers,
+         test_containers_communicate
+
+
+=====================================================================================================================
+ §9.2  KUBERNETES - MANDATORY
+=====================================================================================================================
+ PDF  "The Kubernetes deployment may be performed locally using Minikube, kind, or Docker Desktop Kubernetes."
+ DO      $ minikube status
+         $ kubectl get nodes
+ EXPECT  host / kubelet / apiserver Running; node "minikube" Ready.
+ WHY     We deploy locally on Minikube (cloud deployment is optional and not used).
+
+ PDF  "Kubernetes Deployments."
+ DO      $ kubectl -n erms get deployments
+ EXPECT  coordinator 1/1, request-service 2/2, matching-service 2/2, prometheus 1/1, grafana 1/1, frontend 2/2.
+         ($ kubectl -n erms get statefulsets  ->  rabbitmq 1/1, storage-shard-0/1/2 2/2 each)
+ WHY     Deployments run the stateless services. Stateful parts (storage, RabbitMQ) are StatefulSets: stable pod
+         names + their own persistent disk, which a storage node needs to keep its data across restarts.
+
+ PDF  "Kubernetes Services."
+ DO      $ kubectl -n erms get services
+         $ kubectl -n erms get endpointslices | grep request-service
+ EXPECT  request-service (NodePort 30080), coordinator (30081), matching-service, rabbitmq (30672), ... ; the
+         request-service EndpointSlice lists the IPs of BOTH request-service pods.
+ WHY     A Service is one stable name + address in front of a changing set of pods, and load-balances over them.
+
+ PDF  "Pod replicas."
+ DO      $ kubectl -n erms get pods -l app=request-service
+         $ for i in $(seq 1 12); do curl -s -H 'Connection: close' $API/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["instance"])'; done | sort | uniq -c
+ EXPECT  2 pods Running; the 12 calls are answered by BOTH pods (two different names, e.g. 4 + 8 or 6 + 6).
+ WHY     replicas: 2 in the Deployment; the Service spreads the calls over all ready replicas.
+
+ PDF  "Service-to-service communication."
+ DO      $ kubectl -n erms exec deploy/request-service -- python -c "import urllib.request; print(urllib.request.urlopen('http://matching-service:8000/health').read().decode())"
+         $ kubectl -n erms exec deploy/matching-service -- python -c "import urllib.request; print(urllib.request.urlopen('http://coordinator:8000/health').read().decode())"
+ EXPECT  {"status":"ok", ...} from matching-service; {"status":"ok","healthy_shards":[0,1,2],...} from the coordinator.
+ WHY     Pods call each other through Service names via Kubernetes DNS.
+
+ PDF  "Microservice scaling."
+ DO      $ (for i in $(seq 1 30); do curl -s -o /dev/null -w '%{http_code} ' -H 'Connection: close' $API/health; sleep 0.5; done; echo) &
+         $ kubectl -n erms scale deploy/request-service --replicas=4; kubectl -n erms rollout status deploy/request-service; wait
+         $ kubectl -n erms get pods -l app=request-service
+         $ kubectl -n erms scale deploy/request-service --replicas=2
+ EXPECT  "200" for every one of the 30 calls while scaling; 4 pods Running; then back to 2.
+ WHY     Stateless services scale horizontally; new pods only get traffic once their readiness probe passes,
+         so no call fails. (matching-service is scaled by KEDA on queue length: ./scripts/matching-replicas.sh 4
+         pins 4 pods, ./scripts/matching-replicas.sh auto gives control back.)
+
+ PDF  "Pod failure and automatic recovery."
+ DO      $ kubectl -n erms get pods -l app=request-service
+         $ kubectl -n erms delete $(kubectl -n erms get pod -l app=request-service -o name | head -1) --wait=false
+         $ for i in $(seq 1 10); do curl -s -o /dev/null -w '%{http_code} ' -H 'Connection: close' $API/health; sleep 0.5; done; echo
+         $ kubectl -n erms get pods -l app=request-service
+ EXPECT  200 for all 10 calls; a NEW pod (new name, a few seconds old) replaces the deleted one -> 2 again
+         (the new pod shows 0/1 for its first ~10 s while it starts, then 1/1).
+ WHY     The Deployment controller always restores the desired number of pods; the other replica serves
+         meanwhile. A crashed (not deleted) container is restarted by the kubelet's liveness probe.
+ AUTO    test_k8s_deployments, test_k8s_services, test_k8s_pod_replicas, test_containers_communicate,
+         test_k8s_scale_request_service_with_continued_availability, test_k8s_pod_failure_and_automatic_recovery
+
+
+=====================================================================================================================
+ §10  REQUIRED DEMONSTRATION  (the 9 items, in the PDF's order)
+=====================================================================================================================
+ $ newplace
+
+ 10.1 Request Creation: "Create and retrieve an emergency request."
+ DO      $ call POST /requests '{"type":"water","details":"Family of 4 needs drinking water","priority":"high","auto_match":false,"location":'"$(loc 0)"'}'
+         $ REQ=$(last_id)
+         $ call GET /requests/$REQ
+ EXPECT  201: id "req-<hex>", type, location, details, status "pending", created_at.  GET: 200, the same data
+         plus where it is stored (_storage.shard, served_by).
+ WHY     A request gets a unique id and is stored in its shard; any later call finds it by that id.
+
+ 10.2 Resource Registration: "Register an available resource or volunteer."
+ DO      $ call POST /resources '{"type":"water","kind":"ngo","name":"NGO water tanker","availability":2,"location":'"$(loc 1)"'}'
+         $ RES=$(last_id)
+         $ call POST /resources '{"type":"water","kind":"volunteer","name":"Ravi (volunteer with water cans)","availability":1,"location":'"$(loc 3)"'}'
+ EXPECT  201 each: id "res-water-<hex>", status "available", the given availability, kind ngo / volunteer.
+ WHY     Status starts "available" because it has free units. A resource can be a physical resource,
+         volunteer, NGO or other.
+
+ 10.3 Resource Matching: "Match a request with an appropriate available resource."
+ DO      $ call POST /match/$REQ
+         $ call GET /resources/$RES
+ EXPECT  200 "result": "matched" -> NGO water tanker, distance_km ~1.0 (nearer than the volunteer at 3 km).
+         Tanker availability 2 -> 1.
+ WHY     Same type, available, nearest first; one unit is taken. (Calling it again returns "skipped": a request
+         never takes a second unit.)
+
+ 10.4 Data Distribution: "Demonstrate distribution across the three storage shards."
+ DO      $ IDS=$(for i in $(seq 1 30); do curl -s -X POST $API/requests -H 'Content-Type: application/json' -d '{"type":"food","auto_match":false,"location":'"$(loc 0)"'}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])'; done)
+         $ for id in $IDS; do curl -s $API/requests/$id | python3 -c 'import json,sys; print("shard", json.load(sys.stdin)["_storage"]["shard"])'; done | sort | uniq -c
+         $ ccall GET /internal/shard-of/request:$REQ
+         $ python3 -c "import hashlib,sys; k='request:'+sys.argv[1]; print(k, '-> sha256 mod 3 =', int.from_bytes(hashlib.sha256(k.encode()).digest()[:8],'big') % 3)" $REQ
+         $ cluster
+ EXPECT  the 30 requests are spread over shard 0, 1 and 2 (roughly 10 each). The coordinator's shard for REQ
+         equals the hand-computed sha256 mod 3. cluster: records on all 3 shards; the 2 replicas of a shard have
+         the same count (it can differ by a few for a moment: each node reports its count with its 2-s heartbeat).
+ WHY     shard = sha256(key) mod 3: random ids -> even spread; the hash is stable, so every service agrees.
+         The client never chooses or knows the shard (the coordinator routes).
+
+ 10.5 Asynchronous Processing: "Submit multiple requests and demonstrate processing through RabbitMQ."
+ DO      $ call PUT /resources/$RES/status '{"availability":50,"status":"available"}'
+         $ BURST=$(for i in $(seq 1 40); do curl -s -X POST $API/requests -H 'Content-Type: application/json' -d '{"type":"water","details":"burst","location":'"$(loc 0)"'}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' & done; wait)
+         $ for i in 1 2 3 4 5; do queue; sleep 2; done
+         $ for id in $BURST; do curl -s $API/requests/$id | python3 scripts/show.py worker; done | sort | uniq -c
+ EXPECT  40 requests accepted at once (201). queue: messages ready / unacked appear, then 0 (RabbitMQ's numbers
+         lag ~5 s). All 40 "matched", shared between the matching pods: both of them (e.g. 21 + 19) - or more
+         pods if KEDA scaled up during the burst (seen: 18 + 18 + 2 + 2 with 4 pods).
+ WHY     All 40 go through RabbitMQ: both matching pods consume from the same queue (competing consumers),
+         each message is delivered to exactly one of them. RabbitMQ UI (http://localhost:30672, user erms,
+         password ./scripts/rabbit-password.sh) shows the same rise and fall.
+
+ 10.6 Storage Failure: "Stop a storage node and demonstrate continued operation using an available replica."
+ ->   §8 above: BEFORE, STOP THE NODE, DURING (detect / replica / continue).
+
+ 10.7 Node Recovery: "Restart the failed node and demonstrate restoration or synchronization of the required data."
+ ->   §8 above: RESTART THE NODE, AFTER ("SYNC complete ... applied 2 updates", equal key counts).
+
+ 10.8 Kubernetes Recovery: "Terminate a running application pod and demonstrate automatic recovery."
+ ->   §9.2 "Pod failure and automatic recovery".
+
+ 10.9 Kubernetes Scaling: "Increase the number of replicas of a microservice and demonstrate continued availability."
+ ->   §9.2 "Microservice scaling" (30/30 calls answered 200 while scaling 2 -> 4).
+
+ Whole demonstration as one script (before / during / after printed for you):
+ $ AUTO=1 ./scripts/k8s-demo.sh       # pod recovery, scaling 2 -> 4 -> 2 with a live availability probe,
+                                      # storage failure (scale-down and pod delete); EXPECT every step OK, exit 0
+ Compose: $ AUTO=1 ./scripts/demo.sh  # steps 1-7: creation, registration, matching, distribution, RabbitMQ,
+                                      # storage failure, recovery
+
+
+=====================================================================================================================
+ §11  TESTING  ("tested under both normal and failure conditions")
+=====================================================================================================================
+ One automated run covers every item below, under normal AND failure conditions:
+ $ ./scripts/spec-test.sh k8s                 EXPECT  72 passed, 0 failed (~15 min) and every check printed
+ Each item: the manual test (in this guide) and the automated test(s) that prove it  (-k NAME runs just that one).
+
+ 11.1 "Request creation, retrieval, and status updates."
+      MANUAL  §10.1; then:
+         $ call PUT /resources/$RES/status '{"availability":2,"status":"available"}'
+         $ call PUT /requests/$REQ/status '{"status":"in_progress"}'
+         $ call PUT /requests/$REQ/status '{"status":"resolved"}'
+         $ call GET /requests/$REQ | grep -A1 '"status"'
+         $ call PUT /requests/$REQ/status '{"status":"pending"}'
+      EXPECT  200, 200; history pending -> matched -> in_progress -> resolved; the last call: 409 "request is
+              already resolved" (a finished request cannot be changed). Resolving gave the tanker its unit back.
+      WHY     Allowed life cycle: pending -> matched -> in_progress -> resolved (or cancelled). 409 = valid input
+              that conflicts with the current state.
+      AUTO    test_createRequest, test_getRequest, test_updateStatus, test_request_record_fields
+
+ 11.2 "Resource registration and availability updates."
+      MANUAL  §10.2; then:
+         $ call PUT /resources/$RES/status '{"availability":0}'
+         $ call PUT /resources/$RES/status '{"availability":5,"status":"available"}'
+         $ call PUT /resources/$RES/status '{"status":"offline"}'
+      EXPECT  200 each: 0 units -> status "busy" automatically; 5 -> "available"; then "offline".
+      WHY     Status follows capacity; "offline" resources are never matched.
+         $ call PUT /resources/$RES/status '{"status":"available"}'          # back in service for 11.3
+      AUTO    test_registerResource, test_resource_availability_updates, test_resource_record_fields_and_kinds
+
+ 11.3 "Correct resource matching."
+      MANUAL  §7 "MATCHING CONSIDERS RESOURCE TYPE AND LOCATION" (nearest of the right type; 50 km limit) and:
+         $ newplace
+         $ call POST /resources '{"type":"shelter","name":"Shelter (1 bed)","availability":1,"location":'"$(loc 1)"'}'; S=$(last_id)
+         $ call POST /requests '{"type":"shelter","auto_match":false,"location":'"$(loc 0)"'}'; A=$(last_id)
+         $ call POST /requests '{"type":"shelter","auto_match":false,"location":'"$(loc 0)"'}'; B=$(last_id)
+         $ call POST /match/$A; call POST /match/$B
+         $ call PUT /resources/$S/status '{"status":"offline"}'
+      EXPECT  A: 200 matched. B: 409 (the only bed is taken). Shelter: availability 0, "busy".
+      WHY     Only the right type, available, with free units, within 50 km; never more assignments than units.
+      AUTO    test_matchRequest, test_matching_considers_resource_type, test_matching_considers_location,
+              test_matching_uses_only_available_resources
+
+ 11.4 "Multiple simultaneous requests."
+      MANUAL
+         $ newplace
+         $ call POST /resources '{"type":"food","name":"Food bank (20 units)","availability":20,"location":'"$(loc 1)"'}'; FB=$(last_id)
+         $ IDS=$(for i in $(seq 1 30); do curl -s -X POST $API/requests -H 'Content-Type: application/json' -d '{"type":"food","auto_match":false,"location":'"$(loc 0)"'}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' & done; wait)
+         $ echo $IDS | wc -w
+         $ (for id in $IDS; do curl -s -o /dev/null -w '%{http_code}\n' -X POST $API/match/$id & done; wait) | sort | uniq -c
+         $ call GET /resources/$FB | grep -E '"availability"|"status"'
+      EXPECT  30 different ids. Exactly "20 200" and "10 409". Food bank: availability 0, "busy".
+      WHY     30 requests created and matched AT THE SAME TIME against 20 units. Each unit is claimed with
+              compare-and-set (write only if nobody changed it meanwhile; otherwise re-read and retry), so
+              exactly 20 succeed and 10 are correctly refused - never over-assigned, no unit lost.
+      AUTO    test_simultaneous_requests_never_double_assign, test_multiple_requests_processed_through_rabbitmq
+
+ 11.5 "RabbitMQ message delivery and processing."
+      MANUAL  §7 steps 3-4 (message waits while matching is paused, delivered after) and §10.5 (40 messages
+              shared by both consumers). Topology:
+         $ curl -s -u erms:$RPASS $RABBIT/api/exchanges/%2F/erms.requests/bindings/source | python3 -m json.tool | grep -E '"(destination|routing_key)"'
+      EXPECT  erms.requests -> matching.requests, routing key "request.#".
+      WHY     Topic exchange -> durable queue, persistent messages, acknowledged only after processing: a
+              message is delivered even if the consumer was down, and re-delivered if a worker crashes.
+      AUTO    test_flood_victim_needs_drinking_water_end_to_end, test_multiple_requests_processed_through_rabbitmq,
+              test_matching_service_down_503_and_queue_buffers, test_rabbitmq_topology
+
+ 11.6 "Correct shard selection and data distribution."
+      MANUAL  §10.4.
+      EXPECT  coordinator's shard = sha256(key) mod 3 computed by hand; requests on all 3 shards.
+      AUTO    test_coordinator_selects_shard_by_hash_mod_3, test_data_distributed_across_three_shards_and_nodes
+
+ 11.7 "Replica availability during storage-node failure."
+      MANUAL  §8 DURING (read served by storage-shard-1-0 while storage-shard-1-1 is down; writes continue).
+      AUTO    test_storage_node_failure_before_during_after, test_k8s_storage_pod_killed_reads_fail_over_then_resync
+
+ 11.8 "Recovery and data synchronization after node recovery."
+      MANUAL  §8 AFTER ("SYNC complete ... applied 2 updates", equal key counts, K2 readable).
+      AUTO    test_storage_node_failure_before_during_after, test_k8s_storage_pod_killed_reads_fail_over_then_resync
+
+ 11.9 "Kubernetes pod failure and automatic recovery."
+      MANUAL  §9.2 "Pod failure and automatic recovery".
+      AUTO    test_k8s_pod_failure_and_automatic_recovery
+
+ 11.10 "Kubernetes-based microservice scaling."
+      MANUAL  §9.2 "Microservice scaling".
+      AUTO    test_k8s_scale_request_service_with_continued_availability,
+              test_k8s_scale_matching_service_with_continued_availability
+
+ "Normal and failure conditions"
+      NORMAL   11.1 - 11.6.
+      FAILURE  storage node down (§8), matching service down (§7 steps 3-4), pod deleted (§9.2), and:
+         $ kubectl -n erms scale deploy/coordinator --replicas=0; sleep 10
+         $ call GET /requests/$REQ | head -3
+         $ kubectl -n erms scale deploy/coordinator --replicas=1; sleep 20; cluster
+      EXPECT  503 "storage coordinator unreachable" while it is down; then all 6 nodes "ready" again by themselves.
+      WHY     503 = a service the request depends on is unavailable: a clear error, no crash, no wrong data.
+      AUTO    test_matching_service_down_503_and_queue_buffers, test_whole_shard_down_503_then_recovers,
+              test_storage_node_failure_before_during_after
+
+
+=====================================================================================================================
+ §12  LEFT TO YOUR DESIGN  ("Students should be able to justify their choices.")
+=====================================================================================================================
+ Nothing to "pass" here: for each choice -> what we chose, how to SHOW it, and the justification.
+
+ 12.1 Programming language and web framework
+      CHOICE  Python 3.12 + FastAPI (async), httpx (HTTP client), aio-pika (RabbitMQ client).
+      SHOW    $ head -3 coordinator/Dockerfile;  $ cat requirements.txt;  browser: http://localhost:30080/docs
+      WHY     Async I/O suits a system that mostly waits on the network (replicas, broker); FastAPI validates every
+              input from typed models (automatic 422) and generates the Swagger documentation.
+
+ 12.2 Database or storage mechanism used by individual shards
+      CHOICE  SQLite, one database file per storage node, on its own persistent volume.
+      SHOW    $ kubectl -n erms get pvc          (one volume per storage pod)
+      WHY     Durable, transactional and zero-maintenance; each node owns its data; every write is flushed to disk
+              (synchronous=FULL) before it is acknowledged.
+
+ 12.3 Exact sharding and partitioning strategy
+      CHOICE  shard = sha256(key) mod 3; keys "request:<id>" and "resource:<type>:<id>".
+      SHOW    §10.4 (hand-computed hash = the coordinator's choice).
+      WHY     A stable hash (Python's own hash() differs per process) so every service agrees; random ids spread
+              evenly; the type inside resource keys lets matching scan only resources of the needed type.
+
+ 12.4 Replica synchronization mechanism
+      CHOICE  The coordinator writes to ALL live replicas in parallel; each record has a version; on recovery a
+              node copies a snapshot (incl. deletes) from a ready replica and merges it - newest version wins.
+      SHOW    §8 AFTER ("applied 2 updates").
+      WHY     Version-based merging is idempotent and order-independent; only missed updates are applied; a node
+              serves reads only after it is synchronized. Each sync order carries an id and is re-sent if lost.
+
+ 12.5 Resource-matching strategy
+      CHOICE  same type + status available + free units + within 50 km (haversine); nearest first, then most
+              free units; the unit is claimed with compare-and-set before the request is marked matched.
+      SHOW    §7 "MATCHING CONSIDERS ..." and §11.4.
+      WHY     Nearest help arrives first; compare-and-set prevents two matchers from giving away the same unit.
+
+ 12.6 RabbitMQ exchange, queue, and routing configuration
+      CHOICE  topic exchange erms.requests -> durable queue matching.requests (routing key request.#),
+              persistent messages, manual acknowledgement, prefetch 2 per worker. Retry: exchange erms.retry ->
+              queue matching.retry (5 s TTL) -> back to erms.requests; after 12 attempts "unmatched".
+      SHOW    §11.5 bindings; RabbitMQ UI -> Exchanges / Queues.
+      WHY     Durable + persistent + ack-after-work = no message loss; competing consumers share the load; the
+              delayed retry queue retries without blocking a worker.
+
+ 12.7 Microservice boundaries and internal API design
+      CHOICE  request-service (client REST API), matching-service (RabbitMQ consumer + matching), coordinator
+              (routing, replication, failure detection) + storage nodes. Internal API: register, heartbeat,
+              PUT / GET / DELETE /internal/data/{key}, as in PDF §6.
+      SHOW    $ kubectl -n erms get deploy,sts;  http://localhost:30081/docs (coordinator API)
+      WHY     Stateless parts scale independently of the stateful storage tier; each service has one job.
+
+ 12.8 Kubernetes deployment configuration
+      CHOICE  Deployments for stateless services, StatefulSets + persistent volumes for storage and RabbitMQ,
+              Services + NodePorts, readiness / liveness probes, passwords in Secrets, resource limits.
+      SHOW    $ ls k8s/;  $ kubectl -n erms get deploy,sts,svc,pvc,secrets
+      WHY     Stable identity + disk where state lives; self-healing via probes; no passwords in files.
+
+ 12.9 Monitoring and logging approach
+      CHOICE  Every service exposes /metrics; Prometheus scrapes them, Grafana shows the "ERMS overview"
+              dashboard; structured logs per service (NODE DOWN, SYNC complete, MATCHED ...); /cluster view.
+      SHOW    Grafana http://localhost:30030;  $ kubectl -n erms logs deploy/coordinator | tail
+      WHY     Failures and recovery are visible live (red / green, failovers, resync duration, queue depth).
+
+ 12.10 Optional cloud platform and deployment architecture
+      CHOICE  Not used (optional): deployed locally on Minikube, as the PDF allows.
+      WHY     The same manifests (k8s/*.yaml) would run on a cloud Kubernetes cluster without code changes.
+
+ "Design patterns may be used where appropriate, but their use is optional."
+      USED    competing consumers (RabbitMQ), scatter-gather (list over 3 shards), optimistic concurrency /
+              compare-and-set (matching), heartbeat (failure detection), retry with a delay queue
+              (dead-letter), last-writer-wins replication (versions).
