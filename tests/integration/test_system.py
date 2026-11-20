@@ -254,8 +254,11 @@ def test_async_matching_through_rabbitmq():
 
 def test_request_waits_in_retry_queue_until_resource_appears():
     req = create_request("food", dlat=4)
-    time.sleep(2)
-    assert api.get(f"/requests/{req['id']}").json()["status"] == "pending"
+    # wait until a matching attempt has really failed (no resource yet) and the request went to the retry queue;
+    # a fixed sleep raced with a busy queue, where the first attempt could come after the resource appeared
+    first = wait_for(lambda: (g := api.get(f"/requests/{req['id']}").json())["match_attempts"] >= 1 and g,
+                     timeout=60, desc="first failed matching attempt")
+    assert first["status"] == "pending"
     res = register("food", dlat=4)
     got = wait_for(lambda: (g := api.get(f"/requests/{req['id']}").json())["status"] == "matched" and g,
                    timeout=40, desc="match after retry")
@@ -447,8 +450,7 @@ def test_queued_requests_survive_broker_restart_and_match_503_when_matching_down
 COORD_RESTART = os.getenv("COORD_RESTART_CMD", "docker compose restart coordinator")
 
 
-@pytest.mark.skipif("kubectl" in STOP_CMD, reason="needs per-node stop/start (Compose); "
-                                                   "Kubernetes variant: tests/k8s")
+@pytest.mark.compose_only   # stops single storage nodes of a shard independently: Docker Compose only
 def test_coordinator_restart_never_serves_a_stale_replica():
     """Replica A misses an update while it is down. Then the coordinator restarts and A comes back FIRST:
     it must not serve its stale copy; once B is back, A and B merge and A serves the new data."""

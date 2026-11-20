@@ -1,0 +1,381 @@
+=====================================================================================================================
+ ERMS - RUN AND TEST GUIDE (terminal only)
+ Every feature of the PDF + both extensions (#39 Prometheus/Grafana, #18 KEDA), step by step.
+ Type the lines that start with "$ " (without the "$ "). Lines starting with "#" are explanations.
+=====================================================================================================================
+
+ PART 0  One-time setup
+ PART 1  Docker Compose: start the system
+ PART 2  Docker Compose: hands-on tour of EVERY feature (you type each command)
+ PART 3  Docker Compose: monitoring (Prometheus + Grafana)                       [extension #39]
+ PART 4  Docker Compose: guided demo script + automated tests
+ PART 5  Kubernetes: start the system (minikube, KEDA, Prometheus, Grafana)
+ PART 6  Kubernetes: hands-on tour (Deployments, Services, replicas, recovery, scaling, storage failure)
+ PART 7  Kubernetes: KEDA autoscaling on queue depth                              [extension #18]
+ PART 8  Kubernetes: monitoring, guided demo scripts + automated tests
+ PART 9  Reports, stopping, cleaning up
+ PART 10 Troubleshooting
+ PART 11 Map: every PDF requirement / extension -> where to see it
+
+ RULE: run EITHER Docker Compose OR Kubernetes at a time (the laptop has 7 GB RAM).
+       Compose -> Kubernetes:  docker compose stop  then  minikube start
+       Kubernetes -> Compose:  minikube stop        then  docker compose up -d
+
+
+=====================================================================================================================
+ PART 0 - ONE-TIME SETUP (WSL Ubuntu terminal)
+=====================================================================================================================
+
+$ cd /mnt/c/Users/rohit/Downloads/Cloud_Computing_Project/Emergency-Response-Matching
+$ export PATH="$HOME/.local/bin:$PATH"                     # kubectl + minikube live in ~/.local/bin
+$ docker --version && docker compose version                # Docker engine + Compose plugin
+$ kubectl version --client && minikube version              # only needed for the Kubernetes part
+$ python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt pytest pyyaml
+                                                            # test environment (skip if .venv already exists)
+$ ./scripts/init-env.sh                                     # .env with random RabbitMQ + Grafana passwords
+                                                            # (safe to run again: only adds what is missing)
+
+
+=====================================================================================================================
+ PART 1 - DOCKER COMPOSE: START THE SYSTEM                                        (PDF §2, §9.1)
+=====================================================================================================================
+
+$ docker compose up -d --build            # builds the 4 images (Dockerfiles) and starts 13 containers
+$ docker compose ps                        # rabbitmq, coordinator, storage-0a..2b (6), request-service,
+                                           # matching-service x2, prometheus, grafana  -> all "running"
+$ docker images | grep erms                # the 4 images built from the Dockerfiles
+$ ls */Dockerfile                          # coordinator/ matching_service/ request_service/ storage_node/
+
+# Wait until everything is ready (all shards ready + API connected to RabbitMQ), ~20 s after a cold start:
+$ until curl -s localhost:8001/health | grep -q '"status":"ok"' && curl -s localhost:8080/health | grep -q '"broker_connected":true'; do sleep 2; done; echo READY
+
+# Browser (Windows works directly with localhost for Compose):
+#   http://localhost:8080/docs     Swagger UI = the client API (try every endpoint with "Try it out")
+#   http://localhost:8001/cluster  coordinator: shards, storage nodes, status, record counts
+#   http://localhost:15672         RabbitMQ UI  (user erms, password: COMPOSE=1 ./scripts/rabbit-password.sh)
+#   http://localhost:3000          Grafana "ERMS overview" (no login needed to view)
+#   http://localhost:9090          Prometheus
+
+
+=====================================================================================================================
+ PART 2 - DOCKER COMPOSE: HANDS-ON TOUR OF EVERY FEATURE
+=====================================================================================================================
+# Load the helpers once per terminal. They print "HTTP <code>" + the JSON answer of every call:
+#   call METHOD PATH [JSON]   client API      ccall ...  coordinator (internal API)
+#   last_id  field  cluster  queue  prom      (see scripts/cli.sh)
+
+$ cd /mnt/c/Users/rohit/Downloads/Cloud_Computing_Project/Emergency-Response-Matching
+$ source scripts/cli.sh compose
+
+# ---- 2.1 System configuration: 1 coordinator, 2-3 microservices, 1 RabbitMQ, 3 shards x 2 (PDF §2, §4)
+$ call GET /health                         # request-service up and connected to RabbitMQ
+$ ccall GET /health                        # coordinator: healthy_shards [0, 1, 2], 6 nodes
+$ cluster                                  # 3 shards, each primary + replica, all "ready", equal record counts
+$ queue                                    # RabbitMQ queue matching.requests: 2 consumers (2 matching workers)
+
+# ---- 2.2 registerResource(type, location, availability) - POST /resources -> 201      (PDF §1, §3.2, §5)
+$ call POST /resources '{"type":"water","kind":"ngo","name":"Kochi NGO water tanker","availability":2,"location":{"lat":9.9400,"lon":76.2700,"area":"Ernakulam"}}'
+$ RES=$(last_id); echo $RES                # res-water-...: unique id, type, location, availability, status
+$ call POST /resources '{"type":"transportation","kind":"volunteer","name":"Volunteer boat","availability":1,"location":{"lat":9.9350,"lon":76.2650}}'
+$ call GET /resources/$RES                 # read it back
+$ call GET "/resources?type=transportation&status=available" | head -25    # GET /resources -> 200 (list, filters)
+
+# ---- 2.3 createRequest(type, location, details) + getRequest(requestId)         (PDF §1, §3.1, §5)
+$ call POST /requests '{"type":"water","details":"Flooded house: family of 4 needs drinking water","priority":"high","auto_match":false,"location":{"lat":9.9312,"lon":76.2673,"area":"Kochi"}}'
+$ REQ=$(last_id); echo $REQ                # req-...: id, type, location, details, status pending, created_at
+$ call GET /requests/$REQ                  # GET /requests/{id} -> 200; _storage shows shard + serving node
+
+# ---- 2.4 matchRequest(requestId) - POST /match/{id} -> 200   (matches on TYPE + LOCATION, nearest first) (§1, §7)
+$ call POST /match/$REQ                    # "matched" -> Kochi NGO water tanker, ~1 km
+$ call GET /resources/$RES                 # availability 2 -> 1, the request is in assigned_requests
+$ call POST /match/$REQ                    # again: "skipped" - never takes a second unit
+
+# ---- 2.5 updateStatus(requestId, status) - PUT /requests/{id}/status -> 200            (PDF §1, §5)
+$ call PUT /requests/$REQ/status '{"status":"in_progress","note":"tanker on the way"}'
+$ call PUT /requests/$REQ/status '{"status":"resolved"}'
+$ call GET /resources/$RES                 # unit released: availability back to 2
+$ call GET /requests/$REQ | grep -A1 '"status"'      # history: pending -> matched -> in_progress -> resolved
+
+# ---- 2.6 Resource availability updates - PUT /resources/{id}/status -> 200            (PDF §5, §11)
+$ call PUT /resources/$RES/status '{"status":"offline"}'          # offline resources are never matched
+$ call PUT /resources/$RES/status '{"availability":0}'            # 0 units -> status "busy" automatically
+$ call PUT /resources/$RES/status '{"availability":50,"status":"available"}'   # 50 units for the next step
+
+# ---- 2.7 Asynchronous processing through RabbitMQ (several requests at once)          (PDF §7, §10, §11)
+# Each request is stored, published to RabbitMQ, consumed by a matching worker, matched, statuses updated.
+$ BURST=$(for i in $(seq 1 40); do curl -s -X POST $API/requests -H 'Content-Type: application/json' -d '{"type":"water","details":"burst","location":{"lat":9.9312,"lon":76.2673}}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])' & done; wait); echo $BURST
+                                           # 40 requests at the same moment, all accepted at once (201)
+$ for i in $(seq 1 14); do queue; sleep 2; done
+                                           # watch RabbitMQ: messages WAITING (ready) and being processed
+                                           # (unacked) appear, then drain to 0 (its statistics lag ~5 s)
+$ for id in $(echo $BURST | cut -d' ' -f1-8); do curl -s $API/requests/$id | python3 scripts/show.py request; done
+                                           # "matched" to the tanker, worker=<container id>
+$ for id in $BURST; do curl -s $API/requests/$id | python3 scripts/show.py worker; done | sort | uniq -c
+                                           # all 40 matched, the work shared by BOTH matching workers
+$ curl -s -u erms:$RPASS $RABBIT/api/exchanges/%2F/erms.requests/bindings/source | python3 -m json.tool | grep -E '"(destination|routing_key)"'
+                                           # exchange erms.requests -> queue matching.requests (request.#)
+
+# ---- 2.8 Data distribution + shard selection = sha256(key) mod 3                   (PDF §4, §10, §11)
+$ for id in $BURST; do curl -s $API/requests/$id | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["id"], "-> shard", d["_storage"]["shard"], "served by", d["_storage"]["served_by"])'; done
+$ ccall GET /internal/shard-of/request:$REQ                       # the coordinator's choice
+$ python3 -c "import hashlib,sys; k='request:'+sys.argv[1]; print(k, '-> sha256 mod 3 =', int.from_bytes(hashlib.sha256(k.encode()).digest()[:8],'big') % 3)" $REQ
+                                           # same number, computed by hand: the client never chooses a shard
+$ cluster                                  # records per shard / per node
+
+# ---- 2.9 Internal service communication (coordinator <-> storage nodes)                    (PDF §6)
+$ ccall GET /internal/nodes | grep -E '"node_id"|"status"|"heartbeat_age_s"'   # registered nodes + heartbeats
+$ ccall PUT /internal/data/demo:hello '{"value":{"msg":"hi"}}'                 # store  (to every replica)
+$ ccall GET /internal/data/demo:hello                                          # retrieve
+$ ccall DELETE /internal/data/demo:hello                                       # delete
+$ ccall GET /internal/data/demo:hello                                          # 404 now
+$ ccall POST /internal/nodes/heartbeat '{"node_id":"nobody","shard_id":0,"url":"http://x"}'   # 404: register first
+$ docker compose logs storage-0a | grep -m2 -E "registered with coordinator|SYNC complete"
+
+# ---- 2.10 HTTP status codes: invalid requests, missing items, unavailable services        (PDF §5)
+$ call POST /requests '{"type":"pizza","location":{"lat":0,"lon":0}}'       # 422 unknown type
+$ call POST /requests '{"type":"water","location":{"lat":123,"lon":0}}'     # 422 latitude out of range
+$ call GET /requests/req-000000000000                                       # 404
+$ call PUT /requests/$REQ/status '{"status":"pending"}'                      # 409 already resolved
+$ call PUT /resources/$RES/status '{}'                                      # 400 nothing to update
+$ docker compose stop matching-service
+$ call POST /match/$REQ                                                     # 503 matching service unavailable
+$ docker compose start matching-service
+
+# ---- 2.11 Storage node failure -> replica -> recovery + resynchronisation          (PDF §8, §10, §11)
+# A request that lives on shard 1 (nodes storage-1a + storage-1b; reads normally go to storage-1a):
+$ for i in $(seq 1 30); do call POST /requests '{"type":"food","details":"written BEFORE the failure","auto_match":false,"location":{"lat":9.93,"lon":76.26}}' >/dev/null; [ "$(field 'd["_storage"]["shard"]')" = 1 ] && break; done; S1=$(last_id); echo "$S1 is on shard 1"
+$ call GET /requests/$S1 | grep served_by                     # BEFORE: served_by storage-1a
+$ docker compose stop storage-1a                              # STOP the storage node
+$ sleep 8
+$ cluster                                                     # DURING: storage-1a "down" (heartbeats stopped)
+$ call GET /requests/$S1 | grep served_by                     # DURING: still readable, from the replica storage-1b
+$ for i in $(seq 1 30); do call POST /requests '{"type":"food","details":"written DURING the failure","auto_match":false,"location":{"lat":9.93,"lon":76.26}}' >/dev/null; [ "$(field 'd["_storage"]["shard"]')" = 1 ] && break; done; S2=$(last_id); field 'd["_storage"]'
+                                                              # DURING: accepted, acked only by storage-1b, degraded true
+$ docker compose start storage-1a                             # RESTART it
+$ sleep 12
+$ cluster                                                     # AFTER: ready again, same record count as storage-1b
+$ docker compose logs storage-1a | grep "SYNC complete" | tail -1    # "applied N updates" = the writes it missed
+$ call GET /requests/$S2 | grep -E 'served_by|details'        # AFTER: storage-1a serves the write it missed
+
+
+=====================================================================================================================
+ PART 3 - DOCKER COMPOSE: MONITORING (PROMETHEUS + GRAFANA)                              [extension #39]
+=====================================================================================================================
+# (same terminal, helpers loaded)
+$ curl -s $API/metrics | grep -E "^erms_requests_(created|published)_total" | head -5     # /metrics on every service
+$ curl -s $COORD/metrics | grep "^erms_storage_node_up"                                   # node up/down per node
+$ curl -s $PROM/api/v1/targets | python3 -c 'import json,sys; t=json.load(sys.stdin)["data"]["activeTargets"]; print(len(t), "targets,", sum(x["health"]=="up" for x in t), "up")'
+$ prom 'erms_storage_node_up'                                          # 1 = ready (green), 0 = down (red)
+$ prom 'erms_shard_ready_replicas'                                     # shard health
+$ prom 'sum(rabbitmq_detailed_queue_messages_ready{queue="matching.requests"})'   # queue depth (RabbitMQ plugin)
+$ prom 'histogram_quantile(0.95, sum by (le) (rate(erms_time_to_match_seconds_bucket[10m])))'   # time to match p95
+$ prom 'sum(erms_storage_failovers_total)'                             # read failovers
+$ prom 'erms_storage_last_sync_duration_seconds'                       # resync duration per node
+$ prom 'sum by (status) (erms_http_requests_total{job="request-service"})'   # API calls by HTTP status
+
+# Grafana: open http://localhost:3000 -> dashboard "ERMS overview" (home page, refresh 5 s, no login needed).
+# Admin password (only to edit): COMPOSE=1 ./scripts/grafana-password.sh
+# DEMO MOMENT - watch the dashboard while you run:
+#   $ docker compose stop storage-1a   -> "Storage nodes" timeline: storage-1a turns RED, "Ready replicas per shard"
+#                                         drops to 1, reads fail over ("Read failovers" rises)
+#   $ docker compose start storage-1a  -> GREEN again; "Last resync duration per node" shows its resync
+
+
+=====================================================================================================================
+ PART 4 - DOCKER COMPOSE: GUIDED DEMO SCRIPT + AUTOMATED TESTS
+=====================================================================================================================
+$ ./scripts/demo.sh            # all PDF §10 demonstrations step by step: press Enter between steps
+$ AUTO=1 ./scripts/demo.sh     # same, without pauses
+# steps: 0 cluster | 1 request creation & retrieval | 2 resource registration | 3 matching | 4 data distribution
+#        | 5 asynchronous processing (RabbitMQ) | 6 storage node failure | 7 node recovery & resync
+
+# Automated tests
+$ .venv/bin/python -m pytest -q tests/unit           # 34 unit tests, no deployment needed (~10 s)
+$ ./scripts/spec-test.sh compose                     # EVERY PDF requirement + extensions, prints a report of
+                                                     # every check (~3 min; 48 tests - the 12 Kubernetes-only tests
+                                                     # belong to the Kubernetes run in PART 8)
+$ ./scripts/spec-test.sh compose -k "x39"            # only the monitoring extension tests
+$ ./scripts/spec-test.sh compose -k "storage_node_failure"   # any single test by name
+$ .venv/bin/python -m pytest -v tests/integration    # 19 older end-to-end tests incl. broker/coordinator failures (~4 min)
+
+
+=====================================================================================================================
+ PART 5 - KUBERNETES: START THE SYSTEM                                                   (PDF §9.2)
+=====================================================================================================================
+$ docker compose stop                       # free the RAM (volumes / data are kept)
+$ minikube start                            # first time ever: minikube start --driver=docker --cpus=4 --memory=4096
+$ ./k8s/deploy.sh                           # builds + loads images, installs KEDA (first time), creates Secrets,
+                                            # applies k8s/*.yaml incl. Prometheus, Grafana, ScaledObject, waits
+                                            # until all 3 shards are ready, prints URLs (~3-5 min)
+$ kubectl -n erms get pods                  # 14 pods Running: coordinator, rabbitmq-0, storage-shard-{0,1,2}-{0,1},
+                                            # request-service x2, matching-service x2, prometheus, grafana
+$ kubectl -n keda get pods                  # KEDA operator, metrics API server, admission webhooks
+
+# Windows browser: in a SECOND terminal keep this running (forwards the NodePorts to localhost):
+$ python3 scripts/expose.py
+#   http://localhost:30080/docs  API (Swagger)        http://localhost:30081/cluster  coordinator
+#   http://localhost:30672       RabbitMQ UI          http://localhost:30030          Grafana
+#   http://localhost:30090       Prometheus
+#   (passwords: ./scripts/rabbit-password.sh   ./scripts/grafana-password.sh)
+
+
+=====================================================================================================================
+ PART 6 - KUBERNETES: HANDS-ON TOUR
+=====================================================================================================================
+$ cd /mnt/c/Users/rohit/Downloads/Cloud_Computing_Project/Emergency-Response-Matching
+$ source scripts/cli.sh k8s                 # same helpers, now pointing at the NodePorts
+# ALL of PART 2 (2.1 - 2.10) works unchanged here: run those call/ccall/cluster/queue lines again.
+# Only 2.10's "docker compose stop/start matching-service" becomes:
+#   ./scripts/matching-replicas.sh 0     ...     ./scripts/matching-replicas.sh auto
+
+# ---- 6.1 Deployments, StatefulSets, Services, pod replicas                                 (PDF §9.2)
+$ kubectl -n erms get deploy,sts,svc
+$ kubectl -n erms get pods -o wide
+$ kubectl -n erms get endpointslices        # every Service routes to its running pods
+$ for i in $(seq 1 12); do curl -s -H 'Connection: close' $API/health | python3 -c 'import json,sys; print(json.load(sys.stdin)["instance"])'; done | sort | uniq -c
+                                            # the request-service Service spreads calls over BOTH replica pods
+
+# ---- 6.2 Service-to-service communication (from inside a pod, by Service name)             (PDF §9.2)
+$ kubectl -n erms exec deploy/request-service -- python -c "import urllib.request; print(urllib.request.urlopen('http://matching-service:8000/health').read().decode())"
+$ kubectl -n erms exec deploy/matching-service -- python -c "import urllib.request; print(urllib.request.urlopen('http://coordinator:8000/health').read().decode())"
+
+# ---- 6.3 Pod failure and automatic recovery                                          (PDF §9.2, §10)
+$ kubectl -n erms get pods -l app=request-service                     # 2 API pods
+$ kubectl -n erms delete $(kubectl -n erms get pod -l app=request-service -o name | head -1) --wait=false
+                                            # kill ONE API pod
+$ for i in $(seq 1 10); do curl -s -o /dev/null -w '%{http_code} ' -H 'Connection: close' $API/health; sleep 0.5; done; echo
+                                            # 200 every time: the other replica keeps serving
+$ kubectl -n erms rollout status deploy/request-service
+$ kubectl -n erms get pods -l app=request-service                     # back to 2: a NEW pod was created automatically
+$ kubectl -n erms delete pod -l app=coordinator                       # coordinator restart
+$ sleep 15
+$ cluster                                   # all 6 storage nodes re-registered with the new coordinator
+
+# ---- 6.4 Microservice scaling with continued availability                             (PDF §9.2, §10)
+# (KEDA owns matching-service's replica count, so pin it with the helper script instead of kubectl scale)
+$ ./scripts/matching-replicas.sh 4          # 4 matching pods
+$ queue                                     # 4 consumers on matching.requests
+$ call GET /health
+$ ./scripts/matching-replicas.sh auto       # back to automatic (KEDA): returns to 2 when the queue is empty
+$ kubectl -n erms scale deploy/request-service --replicas=3
+$ kubectl -n erms rollout status deploy/request-service
+$ kubectl -n erms get pods -l app=request-service                     # 3 API pods
+$ kubectl -n erms scale deploy/request-service --replicas=2
+
+# ---- 6.5 Storage failure on Kubernetes (stop a storage pod, then restart it)            (PDF §8, §10)
+$ for i in $(seq 1 30); do call POST /requests '{"type":"food","details":"before the pod failure","auto_match":false,"location":{"lat":9.93,"lon":76.26}}' >/dev/null; [ "$(field 'd["_storage"]["shard"]')" = 1 ] && break; done; K1=$(last_id); echo "$K1 is on shard 1"
+$ kubectl -n erms scale sts/storage-shard-1 --replicas=1             # STOP pod storage-shard-1-1
+$ sleep 10
+$ cluster                                   # storage-shard-1-1 down
+$ call GET /requests/$K1 | grep served_by   # still served (storage-shard-1-0)
+$ kubectl -n erms scale sts/storage-shard-1 --replicas=2             # RESTART it (same persistent volume)
+$ kubectl -n erms rollout status sts/storage-shard-1
+$ sleep 5
+$ cluster                                   # ready again, equal record counts
+$ kubectl -n erms logs storage-shard-1-1 | grep "SYNC complete" | tail -1
+# Variant: kill the pod that SERVES the reads; the StatefulSet recreates it with the same name and volume
+$ kubectl -n erms delete pod storage-shard-1-0
+$ call GET /requests/$K1 | grep served_by   # served by storage-shard-1-1 while storage-shard-1-0 is gone
+$ kubectl -n erms wait --for=condition=Ready pod/storage-shard-1-0 --timeout=120s
+$ sleep 5
+$ cluster
+
+
+=====================================================================================================================
+ PART 7 - KUBERNETES: KEDA AUTOSCALING ON QUEUE DEPTH                                     [extension #18]
+=====================================================================================================================
+$ kubectl -n erms get scaledobject,hpa       # ScaledObject matching-service: min 2, max 6, READY True;
+                                             # HPA keda-hpa-matching-service reads the queue metric
+                                             # (desired pods = ceil(waiting / 5), re-checked every 15 s)
+$ kubectl -n erms get triggerauthentication  # KEDA's RabbitMQ login comes from Secret keda-rabbitmq
+$ ./scripts/keda-demo.sh                     # 200 requests -> live table: queue depth, ready pods, desired pods
+                                             # 2 -> 6 pods by itself, queue drains, back to 2; summary at the end
+$ N=300 AUTO=1 ./scripts/keda-demo.sh        # bigger burst, no pauses
+# Watch it from a SECOND terminal while the demo runs:
+#   $ kubectl -n erms get pods -l app=matching-service -w        (Ctrl+C to stop)
+#   $ kubectl -n erms get hpa keda-hpa-matching-service -w
+#   Grafana http://localhost:30030 -> panel "Autoscaling: matching pods vs queue depth"
+# Manual control still works (KEDA-aware):
+$ kubectl -n erms scale deploy/matching-service --replicas=5    # a plain scale ...
+$ sleep 30
+$ kubectl -n erms get pods -l app=matching-service              # ... is undone by KEDA (back to 2 when idle)
+$ ./scripts/matching-replicas.sh 3                              # pin 3 pods (KEDA paused-replicas)
+$ ./scripts/matching-replicas.sh auto                           # automatic again
+
+
+=====================================================================================================================
+ PART 8 - KUBERNETES: MONITORING, GUIDED DEMO SCRIPTS + AUTOMATED TESTS
+=====================================================================================================================
+# Monitoring - every PART 3 command works here too (after: source scripts/cli.sh k8s), e.g.
+$ prom 'erms_storage_node_up'
+$ prom 'count(up{job="matching-service"} == 1)'      # matching pods right now (watch it during keda-demo.sh)
+$ kubectl -n erms get pods -l 'app in (prometheus,grafana)'        # the monitoring pods
+# Grafana http://localhost:30030 (with expose.py) or http://$(minikube ip):30030 -> "ERMS overview"
+# DEMO MOMENT: kubectl -n erms delete pod storage-shard-1-0 while watching the dashboard: red, failovers rise, green.
+
+# Guided demo scripts
+$ ./scripts/k8s-demo.sh             # pod recovery, coordinator restart, scaling 2->4->2 with a live availability
+                                    # probe, storage failure (scale-down and pod delete) before/during/after
+$ AUTO=1 ./scripts/k8s-demo.sh      # without pauses
+$ ./scripts/keda-demo.sh            # autoscaling (PART 7)
+
+# Automated tests
+$ ./scripts/spec-test.sh k8s                         # EVERY PDF requirement + both extensions (~12 min, 60 tests)
+$ ./scripts/spec-test.sh k8s -k "x39 or x18"         # only the extension tests (~6 min)
+$ IP=$(minikube ip); export API_URL=http://$IP:30080 COORD_URL=http://$IP:30081 RABBIT_URL=http://$IP:30672 RABBIT_USER=erms RABBIT_PASS=$(./scripts/rabbit-password.sh)
+$ .venv/bin/python -m pytest -v -s tests/k8s         # 6 Kubernetes tests: pod recovery, scaling, Secret, ... (~2 min)
+$ FAIL_REPLICA=last STOP_CMD="kubectl -n erms scale sts {statefulset} --replicas=1" START_CMD="kubectl -n erms scale sts {statefulset} --replicas=2" BROKER_STOP_CMD="kubectl -n erms scale sts rabbitmq --replicas=0" BROKER_START_CMD="kubectl -n erms scale sts rabbitmq --replicas=1" BROKER_RESTART_CMD="kubectl -n erms delete pod rabbitmq-0" MATCHING_STOP_CMD="./scripts/matching-replicas.sh 0" MATCHING_START_CMD="./scripts/matching-replicas.sh auto" .venv/bin/python -m pytest -v tests/integration
+                                                     # 18 end-to-end tests on Kubernetes (~4 min)
+$ unset API_URL COORD_URL RABBIT_URL RABBIT_USER RABBIT_PASS      # before running tests against Compose again
+
+
+=====================================================================================================================
+ PART 9 - REPORTS, STOPPING, CLEANING UP
+=====================================================================================================================
+$ .venv/bin/python tests/spec/report.py      # merge the last Compose + Kubernetes runs into one requirement matrix
+$ ls tests/spec/reports/                     # spec-compose.{json,md}, spec-k8s.{json,md}, spec-report-combined.md
+$ less SPEC_TEST_REPORT.txt                  # PDF requirements report (checklist + every check)
+$ less EXTENSIONS_TEST_REPORT.txt            # extensions report (#39, #18)
+
+$ docker compose stop                        # stop Compose, keep data          (start again: docker compose up -d)
+$ docker compose down                        # remove containers, keep volumes (data)
+$ docker compose down -v                     # remove containers AND all data (fresh start)
+$ minikube stop                              # stop Kubernetes, keep everything (start again: minikube start)
+$ kubectl delete namespace erms              # remove the whole ERMS deployment (redeploy: ./k8s/deploy.sh)
+
+
+=====================================================================================================================
+ PART 10 - TROUBLESHOOTING
+=====================================================================================================================
+ "command not found: kubectl / minikube"   -> export PATH="$HOME/.local/bin:$PATH"
+ "run ./scripts/init-env.sh first"           -> ./scripts/init-env.sh   (creates / completes .env)
+ broker_connected false right after start    -> wait ~20 s (RabbitMQ starting); curl -s localhost:8080/health
+ something not running after a reboot        -> docker compose up -d     |   minikube start (pods come back by themselves)
+ Kubernetes URLs don't open in Windows       -> python3 scripts/expose.py in a second terminal, use localhost:300xx
+ both deployments slow / out of memory        -> run only one: docker compose stop  OR  minikube stop
+ "connection refused" on the NodePorts       -> minikube status; kubectl -n erms get pods (wait until all Running)
+ a request stays "pending" / "unmatched"     -> no available resource of that type within 50 km: register one;
+                                                the sweeper re-queues it automatically
+ RabbitMQ / Grafana passwords                -> COMPOSE=1 ./scripts/rabbit-password.sh | ./scripts/grafana-password.sh
+                                                (without COMPOSE=1: the Kubernetes Secrets)
+
+
+=====================================================================================================================
+ PART 11 - MAP: EVERY REQUIREMENT -> WHERE TO SEE IT
+=====================================================================================================================
+ PDF §1  createRequest / registerResource / matchRequest / updateStatus / getRequest   -> 2.2 - 2.5
+ PDF §1.1 flood scenario (request -> RabbitMQ -> matching -> storage -> assigned)        -> 2.3, 2.7, demo.sh step 5
+ PDF §2  1 coordinator, 2-3 microservices, 1 RabbitMQ, 3 shards + replicas, clients    -> 1, 2.1, 6.1
+ PDF §3  request / resource fields; resource kinds (resource, volunteer, ngo, other)    -> 2.2, 2.3
+ PDF §4  storage across nodes, coordinator routing, hash mod 3, client unaware          -> 2.8
+ PDF §5  7 endpoints + success codes, JSON, 400/404/409/422/503                         -> 2.2 - 2.6, 2.10, /docs
+ PDF §6  register / heartbeat / PUT / GET / DELETE internal APIs, RabbitMQ              -> 2.9, 2.7
+ PDF §7  async steps 1-6, matching by type + location                                   -> 2.4, 2.7
+ PDF §8  heartbeats, detect, avoid, replica, continue, sync, stop + restart              -> 2.11, 6.5
+ PDF §9.1 Dockerfiles, images, containers, container communication                      -> 1, 6.2
+ PDF §9.2 Deployments, Services, replicas, service-to-service, scaling, pod recovery     -> 6.1 - 6.4
+ PDF §10 required demonstration (all 9)                                                  -> demo.sh + k8s-demo.sh
+ PDF §11 testing (all 10 items)                                                          -> spec-test.sh, PART 4 / 8
+ PDF §12 design choices                                                                  -> README "Design decisions"
+ EXT #39 metrics, Prometheus, Grafana dashboard, red/green, failovers, resync            -> PART 3, PART 8
+ EXT #18 KEDA ScaledObject + HPA, 2 -> 6 -> 2 on queue depth, manual pin                 -> PART 7

@@ -28,8 +28,7 @@ graf = httpx.Client(base_url=P.grafana, timeout=20)
 graf_admin = httpx.Client(base_url=P.grafana, timeout=20, auth=P.grafana_auth)
 DASHBOARD = os.path.join(ROOT, "monitoring", "grafana", "dashboards", "erms-overview.json")
 
-k8s_only = pytest.mark.skipif(P.name != "k8s", reason="KEDA runs on Kubernetes only: verified by the run "
-                                                      "against the minikube deployment (SPEC_TARGET=k8s)")
+k8s_only = pytest.mark.k8s_only     # KEDA exists on Kubernetes only: left out of a Docker Compose run (conftest.py)
 
 
 # ============================================================================= helpers
@@ -383,7 +382,7 @@ def test_x18_scaledobject_hpa_and_credentials(check):
     spec, trig = so["spec"], so["spec"]["triggers"][0]
     check("ScaledObject targets Deployment matching-service", spec["scaleTargetRef"]["name"] == "matching-service", "")
     check("between 2 and 6 pods", (spec["minReplicaCount"], spec["maxReplicaCount"]) == (2, 6),
-          f"min {spec['minReplicaCount']}, max {spec['maxReplicaCount']}, polling every {spec['pollingInterval']}s")
+          f"min {spec['minReplicaCount']}, max {spec['maxReplicaCount']}")
     check("trigger: RabbitMQ queue matching.requests, 5 waiting messages per pod",
           trig["type"] == "rabbitmq" and trig["metadata"]["queueName"] == "matching.requests" and
           trig["metadata"]["mode"] == "QueueLength" and trig["metadata"]["value"] == "5", trig["metadata"])

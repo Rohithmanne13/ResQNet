@@ -1,8 +1,8 @@
 {
  "target": "k8s",
  "endpoints": "API http://192.168.49.2:30080  coordinator http://192.168.49.2:30081  RabbitMQ http://192.168.49.2:30672  Grafana http://192.168.49.2:30030  namespace erms",
- "started": "2026-11-19 23:52:00",
- "finished": "2026-11-20 00:04:14",
+ "started": "2026-11-20 02:24:29",
+ "finished": "2026-11-20 02:34:41",
  "declared": [
   "1.1.a",
   "1.1.b",
@@ -137,7 +137,7 @@
     "4.b"
    ],
    "outcome": "passed",
-   "duration": 32.12720803500008,
+   "duration": 1.2270549599998049,
    "reason": "",
    "checks": [
     [
@@ -185,7 +185,7 @@
     "2.ms"
    ],
    "outcome": "passed",
-   "duration": 1.6794582740000124,
+   "duration": 1.4289247300002899,
    "reason": "",
    "checks": [
     [
@@ -206,12 +206,12 @@
     [
      true,
      "request-service is healthy",
-     "{'status': 'ok', 'instance': 'request-service-7f7cf84b97-rdjp8', 'broker_connected': True}"
+     "{'status': 'ok', 'instance': 'request-service-b5547c6c6-7qc8k', 'broker_connected': True}"
     ],
     [
      true,
      "matching-service is healthy (called from inside the request-service container)",
-     "{\"status\":\"ok\",\"worker\":\"matching-service-5675cb9575-jz6p9\",\"broker_connected\":true}"
+     "{\"status\":\"ok\",\"worker\":\"matching-service-65f774d4c6-zqmwt\",\"broker_connected\":true}"
     ],
     [
      true,
@@ -229,7 +229,7 @@
     "6.mq"
    ],
    "outcome": "passed",
-   "duration": 0.9654057650000141,
+   "duration": 1.4483512560000236,
    "reason": "",
    "checks": [
     [
@@ -279,7 +279,7 @@
     "4.b"
    ],
    "outcome": "passed",
-   "duration": 0.5390747070000543,
+   "duration": 0.8459538019997126,
    "reason": "",
    "checks": [
     [
@@ -335,7 +335,7 @@
     [
      true,
      "the replicas of each shard hold the same number of records",
-     "key counts per shard: {'0': [1074, 1074], '1': [1030, 1030], '2': [1106, 1106]}"
+     "key counts per shard: {'0': [1760, 1760], '1': [1788, 1788], '2': [1816, 1816]}"
     ]
    ]
   },
@@ -347,7 +347,7 @@
     "2.clients"
    ],
    "outcome": "passed",
-   "duration": 0.4401453920000904,
+   "duration": 0.3279757089994746,
    "reason": "",
    "checks": [
     [
@@ -409,7 +409,7 @@
     "11.a"
    ],
    "outcome": "passed",
-   "duration": 0.05548208400000476,
+   "duration": 0.04399181899952964,
    "reason": "",
    "checks": [
     [
@@ -425,7 +425,7 @@
     [
      true,
      "the new request got an id",
-     "req-7834bc8e070f"
+     "req-e5a4529bfb52"
     ],
     [
      true,
@@ -435,7 +435,7 @@
     [
      true,
      "'location' is stored as submitted",
-     "{'lat': -40.91689, 'lon': -141.395461, 'area': 'spec-5d2581'}"
+     "{'lat': -39.929483, 'lon': 167.641895, 'area': 'spec-19383e'}"
     ],
     [
      true,
@@ -455,7 +455,7 @@
     [
      true,
      "it was written to its shard on both copies",
-     "{'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1'], 'version': 1795112560665620003, 'degraded': False}"
+     "{'shard': 2, 'replicas': ['storage-shard-2-0', 'storage-shard-2-1'], 'version': 1795121680776354330, 'degraded': False}"
     ]
    ]
   },
@@ -470,7 +470,7 @@
     "11.a"
    ],
    "outcome": "passed",
-   "duration": 0.06733382200002325,
+   "duration": 0.05687883900054658,
    "reason": "",
    "checks": [
     [
@@ -481,7 +481,7 @@
     [
      true,
      "returned 'id' equals what was created",
-     "req-e78f2015d423"
+     "req-3948d9c6b34a"
     ],
     [
      true,
@@ -491,7 +491,7 @@
     [
      true,
      "returned 'location' equals what was created",
-     "{'lat': -40.91689, 'lon': -136.895461, 'area': 'spec-5d2581'}"
+     "{'lat': -39.929483, 'lon': 172.141895, 'area': 'spec-19383e'}"
     ],
     [
      true,
@@ -506,7 +506,7 @@
     [
      true,
      "returned 'created_at' equals what was created",
-     "2026-11-19T18:22:40.719+00:00"
+     "2026-11-19T20:54:40.828+00:00"
     ],
     [
      true,
@@ -531,7 +531,7 @@
     "11.b"
    ],
    "outcome": "passed",
-   "duration": 0.14181143899998006,
+   "duration": 0.09630286399942634,
    "reason": "",
    "checks": [
     [
@@ -542,7 +542,7 @@
     [
      true,
      "the resource got an id",
-     "res-water-ea4ec842e102"
+     "res-water-d986474661ea"
     ],
     [
      true,
@@ -552,7 +552,7 @@
     [
      true,
      "'location' is stored as submitted",
-     "{'lat': -40.907907, 'lon': -132.395461, 'area': 'spec-5d2581'}"
+     "{'lat': -39.9205, 'lon': 176.641895, 'area': 'spec-19383e'}"
     ],
     [
      true,
@@ -567,12 +567,12 @@
     [
      true,
      "a volunteer can be registered too (kind=volunteer) -> 201",
-     "res-transportation-2a5f0db271d7"
+     "res-transportation-b64db24c86f6"
     ],
     [
      true,
      "the registered resource appears in GET /resources",
-     "104 water resources"
+     "179 water resources"
     ],
     [
      true,
@@ -594,7 +594,7 @@
     "7.6"
    ],
    "outcome": "passed",
-   "duration": 0.24421642800007248,
+   "duration": 0.17948967399979665,
    "reason": "",
    "checks": [
     [
@@ -605,7 +605,7 @@
     [
      true,
      "a resource was found and assigned",
-     "Water tanker (res-water-9dc4371a0890) at 1.998 km"
+     "Water tanker (res-water-a112211acdf7) at 1.998 km"
     ],
     [
      true,
@@ -615,17 +615,17 @@
     [
      true,
      "the request is now 'matched' to that resource",
-     "{'resource_id': 'res-water-9dc4371a0890', 'resource_name': 'Water tanker', 'kind': 'resource', 'distance_km': 1.998, 'matched_at': '2026-11-19T18:22:41.045+00:00', 'matched_by': 'matching-service-5675cb9575-2d68c', 'via': 'api'}"
+     "{'resource_id': 'res-water-a112211acdf7', 'resource_name': 'Water tanker', 'kind': 'resource', 'distance_km': 1.998, 'matched_at': '2026-11-19T20:54:41.069+00:00', 'matched_by': 'matching-service-65f774d4c6-zqmwt', 'via': 'api'}"
     ],
     [
      true,
      "one unit of the resource is assigned to the request",
-     "availability 3 -> 2, assigned_requests=['req-dfa9cb9baf60']"
+     "availability 3 -> 2, assigned_requests=['req-450ac7678502']"
     ],
     [
      true,
      "matching an already-matched request again does not take a second unit",
-     "{'result': 'skipped', 'request_id': 'req-dfa9cb9baf60', 'status': 'matched', 'assigned_resource': 'res-water-9dc4371a0890'}"
+     "{'result': 'skipped', 'request_id': 'req-450ac7678502', 'status': 'matched', 'assigned_resource': 'res-water-a112211acdf7'}"
     ]
    ]
   },
@@ -639,7 +639,7 @@
     "11.a"
    ],
    "outcome": "passed",
-   "duration": 0.36579829199990854,
+   "duration": 0.22200977900001817,
    "reason": "",
    "checks": [
     [
@@ -675,7 +675,7 @@
     [
      true,
      "updated_at moves forward",
-     "2026-11-19T18:22:41.206+00:00 -> 2026-11-19T18:22:41.337+00:00"
+     "2026-11-19T20:54:41.196+00:00 -> 2026-11-19T20:54:41.296+00:00"
     ],
     [
      true,
@@ -694,13 +694,13 @@
     "1.c"
    ],
    "outcome": "passed",
-   "duration": 1.6264126920000308,
+   "duration": 0.6772882129998834,
    "reason": "",
    "checks": [
     [
      true,
      "a 'water' request is accepted (201)",
-     "req-5b64a84a802a"
+     "req-a2d7b5a0dc77"
     ],
     [
      true,
@@ -710,7 +710,7 @@
     [
      true,
      "a 'food' request is accepted (201)",
-     "req-ed0a0c6ff4f3"
+     "req-204f76d2fc96"
     ],
     [
      true,
@@ -720,7 +720,7 @@
     [
      true,
      "a 'medicine' request is accepted (201)",
-     "req-2e45c6a1fac9"
+     "req-716420cfa389"
     ],
     [
      true,
@@ -730,7 +730,7 @@
     [
      true,
      "a 'transportation' request is accepted (201)",
-     "req-4682f1615e93"
+     "req-0a5acafd52bd"
     ],
     [
      true,
@@ -740,7 +740,7 @@
     [
      true,
      "a 'shelter' request is accepted (201)",
-     "req-96ce757a432b"
+     "req-6bb617a8122d"
     ],
     [
      true,
@@ -768,13 +768,13 @@
     "11.a"
    ],
    "outcome": "passed",
-   "duration": 1.2318167610000046,
+   "duration": 0.8038470420005979,
    "reason": "",
    "checks": [
     [
      true,
      "unique request ID: present",
-     "req-396a0cd01d2c"
+     "req-84c751574aab"
     ],
     [
      true,
@@ -789,7 +789,7 @@
     [
      true,
      "location (latitude / longitude)",
-     "{'lat': -40.91689, 'lon': -42.395461, 'area': 'spec-5d2581'}"
+     "{'lat': -39.929483, 'lon': -165.358105, 'area': 'spec-19383e'}"
     ],
     [
      true,
@@ -804,7 +804,7 @@
     [
      true,
      "creation time (ISO-8601 timestamp with time zone, taken when the request was created)",
-     "2026-11-19T18:22:43.203+00:00"
+     "2026-11-19T20:54:42.101+00:00"
     ]
    ]
   },
@@ -822,13 +822,13 @@
     "11.b"
    ],
    "outcome": "passed",
-   "duration": 2.8876707439999336,
+   "duration": 0.5486791389998871,
    "reason": "",
    "checks": [
     [
      true,
      "unique resource ID: present",
-     "res-shelter-b9c65a21b5ec"
+     "res-shelter-ab3b728f6d43"
     ],
     [
      true,
@@ -843,7 +843,7 @@
     [
      true,
      "location",
-     "{'lat': -40.91689, 'lon': -33.395461, 'area': 'spec-5d2581'}"
+     "{'lat': -39.929483, 'lon': -160.858105, 'area': 'spec-19383e'}"
     ],
     [
      true,
@@ -858,22 +858,22 @@
     [
      true,
      "a resource of kind 'resource' can be registered",
-     "res-food-f4d46110cfea"
+     "res-food-9942fe0a5443"
     ],
     [
      true,
      "a resource of kind 'volunteer' can be registered",
-     "res-food-a3115abf67a4"
+     "res-food-ee5d970e1a16"
     ],
     [
      true,
      "a resource of kind 'ngo' can be registered",
-     "res-food-d7c9a2ea986d"
+     "res-food-3bf06fd03157"
     ],
     [
      true,
      "a resource of kind 'other' can be registered",
-     "res-food-0f4a96d798e5"
+     "res-food-50d3cd0c3bc0"
     ],
     [
      true,
@@ -891,28 +891,28 @@
     "5.5"
    ],
    "outcome": "passed",
-   "duration": 1.3348918530001583,
+   "duration": 1.3720321419996253,
    "reason": "",
    "checks": [
     [
      true,
      "GET /resources -> 200 OK with a JSON list",
-     "348 resources across all shards"
+     "539 resources across all shards"
     ],
     [
      true,
      "the list contains the resources just registered (from whichever shard holds them)",
-     "res-water-afefc7c7fcfe (shard 1), res-food-5826670903d4 (shard 0)"
+     "res-water-a54531a5fdd2 (shard 2), res-food-885d661a95cf (shard 2)"
     ],
     [
      true,
      "GET /resources?type=water lists only water resources",
-     "108 items"
+     "183 items"
     ],
     [
      true,
      "GET /resources?status=available lists only available ones",
-     "26 items"
+     "34 items"
     ],
     [
      true,
@@ -922,7 +922,7 @@
     [
      true,
      "requests are kept as well (GET /requests)",
-     "1791 water requests"
+     "3333 water requests"
     ]
    ]
   },
@@ -937,7 +937,7 @@
     "3.2.status"
    ],
    "outcome": "passed",
-   "duration": 0.47813947700001336,
+   "duration": 0.3318565260001378,
    "reason": "",
    "checks": [
     [
@@ -997,7 +997,7 @@
     "10.match"
    ],
    "outcome": "passed",
-   "duration": 6.988299768000047,
+   "duration": 2.1665269110003464,
    "reason": "",
    "checks": [
     [
@@ -1008,7 +1008,7 @@
     [
      true,
      "   the API answers at once, before any matching happened (asynchronous): status 'pending'",
-     "answered in 23 ms"
+     "answered in 17 ms"
     ],
     [
      true,
@@ -1028,7 +1028,7 @@
     [
      true,
      "   RabbitMQ received it into queue 'matching.requests'",
-     "publish counter 1 -> 2"
+     "publish counter 1330 -> 1331"
     ],
     [
      true,
@@ -1038,12 +1038,12 @@
     [
      true,
      "   ... in one of the matching-service instances",
-     "matching-service-5675cb9575-2d68c (running now: ['matching-service-5675cb9575-2d68c', 'matching-service-5675cb9575-jz6p9'])"
+     "matching-service-65f774d4c6-fxrwc (running now: ['matching-service-65f774d4c6-fxrwc', 'matching-service-65f774d4c6-zqmwt'])"
     ],
     [
      true,
      "   the message was acknowledged to RabbitMQ after processing",
-     "ack counter 1 -> 2"
+     "ack counter 4881 -> 4882"
     ],
     [
      true,
@@ -1063,7 +1063,7 @@
     [
      true,
      "   the assignment is persisted in the distributed storage",
-     "2026-11-19T18:22:50.773+00:00"
+     "2026-11-19T20:54:46.825+00:00"
     ],
     [
      true,
@@ -1078,7 +1078,7 @@
     [
      null,
      "the path the request took",
-     "User -> request-service (request-service-7f7cf84b97-rdjp8) -> RabbitMQ (erms.requests -> matching.requests) -> matching-service (matching-service-5675cb9575-2d68c) -> storage shard 1 ['storage-shard-1-0', 'storage-shard-1-1'] -> resource assigned (NGO water tanker)"
+     "User -> request-service (request-service-b5547c6c6-7qc8k) -> RabbitMQ (erms.requests -> matching.requests) -> matching-service (matching-service-65f774d4c6-fxrwc) -> storage shard 1 ['storage-shard-1-0', 'storage-shard-1-1'] -> resource assigned (NGO water tanker)"
     ]
    ]
   },
@@ -1092,7 +1092,7 @@
     "11.c"
    ],
    "outcome": "passed",
-   "duration": 0.31733566499997323,
+   "duration": 0.2237772049998057,
    "reason": "",
    "checks": [
     [
@@ -1122,7 +1122,7 @@
     "11.c"
    ],
    "outcome": "passed",
-   "duration": 3.182704549999926,
+   "duration": 1.6326108410003144,
    "reason": "",
    "checks": [
     [
@@ -1133,7 +1133,7 @@
     [
      true,
      "a resource beyond the matching radius (50 km) is not assigned: 80 km -> 409",
-     "{'message': 'no suitable available resource', 'result': 'no_match', 'request_id': 'req-b5d331250fff', 'candidates': 0, 'unavailable_shards': []}"
+     "{'message': 'no suitable available resource', 'result': 'no_match', 'request_id': 'req-9c04c749b7c7', 'candidates': 0, 'unavailable_shards': []}"
     ],
     [
      true,
@@ -1151,7 +1151,7 @@
     "11.c"
    ],
    "outcome": "passed",
-   "duration": 0.46966715099995326,
+   "duration": 0.3079210549999516,
    "reason": "",
    "checks": [
     [
@@ -1188,23 +1188,23 @@
     "1.d"
    ],
    "outcome": "passed",
-   "duration": 12.143140456000083,
+   "duration": 9.030863217000388,
    "reason": "",
    "checks": [
     [
      true,
      "15 requests submitted at the same time are all accepted (201) and queued",
-     "in 0.22s"
+     "in 0.11s"
     ],
     [
      true,
      "RabbitMQ buffered the burst while the matching workers processed it",
-     "peak backlog in matching.requests: 7 messages"
+     "peak backlog in matching.requests: 15 messages"
     ],
     [
      true,
      "all 15 requests were matched",
-     "5.6s after submission"
+     "8.2s after submission"
     ],
     [
      true,
@@ -1214,12 +1214,12 @@
     [
      true,
      "the work was shared by the matching-service instances (competing consumers)",
-     "{'matching-service-5675cb9575-jz6p9': 8, 'matching-service-5675cb9575-2d68c': 7}"
+     "{'matching-service-65f774d4c6-zqmwt': 8, 'matching-service-65f774d4c6-fxrwc': 7}"
     ],
     [
      true,
      "RabbitMQ counted >= 15 messages published and acknowledged",
-     "publish +15, ack +15"
+     "publish +15, ack +16"
     ],
     [
      true,
@@ -1237,13 +1237,13 @@
     "11.c"
    ],
    "outcome": "passed",
-   "duration": 6.494551545000036,
+   "duration": 5.088629733000289,
    "reason": "",
    "checks": [
     [
      true,
      "30 simultaneous creations: all 201 with distinct ids",
-     "spread over shards {1: 11, 0: 13, 2: 6}"
+     "spread over shards {0: 10, 2: 10, 1: 10}"
     ],
     [
      true,
@@ -1268,7 +1268,7 @@
     [
      true,
      "... and it holds exactly one unit (5 -> 4), listed once",
-     "['req-d87fd8b25bc6']"
+     "['req-077a9011b07e']"
     ],
     [
      true,
@@ -1286,7 +1286,7 @@
     "11.e"
    ],
    "outcome": "passed",
-   "duration": 0.2124150729999883,
+   "duration": 0.3669851309996375,
    "reason": "",
    "checks": [
     [
@@ -1332,83 +1332,83 @@
     "1.d"
    ],
    "outcome": "passed",
-   "duration": 5.921961066999984,
+   "duration": 4.981972176000454,
    "reason": "",
    "checks": [
     [
      true,
      "requests are spread over all 3 shards",
-     "12 requests: {0: 6, 1: 3, 2: 3}"
+     "9 requests: {0: 3, 1: 3, 2: 3}"
     ],
     [
      true,
      "resources are spread over all 3 shards",
-     "10 resources: {0: 5, 1: 3, 2: 2}"
+     "6 resources: {0: 2, 1: 2, 2: 2}"
     ],
     [
      true,
      "every shard holds data",
-     "records per node: {'0': [1126, 1132], '1': [1081, 1085], '2': [1149, 1151]}"
+     "records per node: {'0': [1811, 1810], '1': [1843, 1840], '2': [1861, 1859]}"
     ],
     [
      true,
      "request on shard 0 is on the disk of exactly its shard's 2 nodes",
-     "request:req-5ee311e9f52a -> ['storage-shard-0-0', 'storage-shard-0-1']"
+     "request:req-5151746b3f18 -> ['storage-shard-0-0', 'storage-shard-0-1']"
     ],
     [
      true,
      "   both copies are identical (same version)",
-     "{1795112597063504566}"
+     "{1795121704136746451}"
     ],
     [
      true,
      "resource on shard 0 is on the disk of exactly its shard's 2 nodes",
-     "resource:food:res-food-919abb54929b -> ['storage-shard-0-0', 'storage-shard-0-1']"
+     "resource:medicine:res-medicine-352c4473e6ae -> ['storage-shard-0-0', 'storage-shard-0-1']"
     ],
     [
      true,
      "   both copies are identical (same version)",
-     "{1795112597343449645}"
+     "{1795121704266416301}"
     ],
     [
      true,
      "request on shard 1 is on the disk of exactly its shard's 2 nodes",
-     "request:req-ebaf115730da -> ['storage-shard-1-0', 'storage-shard-1-1']"
+     "request:req-01854e4b1c78 -> ['storage-shard-1-0', 'storage-shard-1-1']"
     ],
     [
      true,
      "   both copies are identical (same version)",
-     "{1795112597118426496}"
+     "{1795121704151373478}"
     ],
     [
      true,
      "resource on shard 1 is on the disk of exactly its shard's 2 nodes",
-     "resource:water:res-water-5384fc88ca02 -> ['storage-shard-1-0', 'storage-shard-1-1']"
+     "resource:water:res-water-fe0436f51bb6 -> ['storage-shard-1-0', 'storage-shard-1-1']"
     ],
     [
      true,
      "   both copies are identical (same version)",
-     "{1795112597326885231}"
+     "{1795121704238814743}"
     ],
     [
      true,
      "request on shard 2 is on the disk of exactly its shard's 2 nodes",
-     "request:req-6974e0ebf4cb -> ['storage-shard-2-0', 'storage-shard-2-1']"
+     "request:req-68daaa8eadfb -> ['storage-shard-2-0', 'storage-shard-2-1']"
     ],
     [
      true,
      "   both copies are identical (same version)",
-     "{1795112597099865266}"
+     "{1795121704109701527}"
     ],
     [
      true,
      "resource on shard 2 is on the disk of exactly its shard's 2 nodes",
-     "resource:water:res-water-b90d77f79c6b -> ['storage-shard-2-0', 'storage-shard-2-1']"
+     "resource:food:res-food-292b4218e00d -> ['storage-shard-2-0', 'storage-shard-2-1']"
     ],
     [
      true,
      "   both copies are identical (same version)",
-     "{1795112597417572967}"
+     "{1795121704252022097}"
     ]
    ]
   },
@@ -1422,7 +1422,7 @@
     "11.f"
    ],
    "outcome": "passed",
-   "duration": 2.3047292090001292,
+   "duration": 2.553468128000077,
    "reason": "",
    "checks": [
     [
@@ -1432,17 +1432,17 @@
     ],
     [
      null,
-     "example: request:req-d66b31e9ba33",
+     "example: request:req-a2378e55ae19",
      "sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']"
     ],
     [
      null,
-     "example: request:req-c0efaa53012a",
-     "sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']"
+     "example: request:req-df1f3935aa7a",
+     "sha256 mod 3 = 2 -> stored on shard 2 by ['storage-shard-2-0', 'storage-shard-2-1']"
     ],
     [
      null,
-     "example: resource:water:res-water-be74eddf9fc6",
+     "example: resource:water:res-water-d21436bd3446",
      "sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']"
     ],
     [
@@ -1468,7 +1468,7 @@
     [
      null,
      "load spread of these 45 keys over the shards",
-     "{0: 15, 1: 14, 2: 16}"
+     "{0: 17, 1: 13, 2: 15}"
     ]
    ]
   },
@@ -1480,7 +1480,7 @@
     "4.e"
    ],
    "outcome": "passed",
-   "duration": 0.5130724670000291,
+   "duration": 0.6784664529996007,
    "reason": "",
    "checks": [
     [
@@ -1525,7 +1525,7 @@
     "5.7"
    ],
    "outcome": "passed",
-   "duration": 0.3276710789999697,
+   "duration": 0.26065837900023325,
    "reason": "",
    "checks": [
     [
@@ -1573,7 +1573,7 @@
     "5.json"
    ],
    "outcome": "passed",
-   "duration": 0.2140192440000419,
+   "duration": 0.15567307299988897,
    "reason": "",
    "checks": [
     [
@@ -1631,7 +1631,7 @@
     "5.400"
    ],
    "outcome": "passed",
-   "duration": 0.2272445759998618,
+   "duration": 0.2022776740000154,
    "reason": "",
    "checks": [
     [
@@ -1734,7 +1734,7 @@
     "5.404"
    ],
    "outcome": "passed",
-   "duration": 0.0502644059999966,
+   "duration": 0.05216814400000658,
    "reason": "",
    "checks": [
     [
@@ -1782,7 +1782,7 @@
     "6.reg"
    ],
    "outcome": "passed",
-   "duration": 1.7470125080000116,
+   "duration": 1.3183742090000123,
    "reason": "",
    "checks": [
     [
@@ -1798,12 +1798,12 @@
     [
      true,
      "POST /internal/nodes/register with a node's own details -> 200",
-     "{'status': 'syncing', 'resync': True, 'peers': ['http://10.244.0.18:8000'], 'num_shards': 3}"
+     "{'status': 'syncing', 'resync': True, 'peers': ['http://10.244.0.75:8000'], 'num_shards': 3}"
     ],
     [
      true,
      "a (re)joining node is told to sync from the ready replica of its shard before serving reads",
-     "status=syncing peers=['http://10.244.0.18:8000'] num_shards=3"
+     "status=syncing peers=['http://10.244.0.75:8000'] num_shards=3"
     ],
     [
      true,
@@ -1813,7 +1813,7 @@
     [
      null,
      "storage node log",
-     "30,232 [storage-storage-shard-0-1] INFO registered with coordinator (shard 0, url http://10.244.0.12:8000): syncing; peers=['http://10.244.0.18:8000']"
+     "2026-11-19 20:35:44,212 [storage-storage-shard-0-1] INFO registered with coordinator (shard 0, url http://10.244.0.70:8000): waiting; peers=[]"
     ]
    ]
   },
@@ -1826,7 +1826,7 @@
     "8.hb"
    ],
    "outcome": "passed",
-   "duration": 5.699342033999983,
+   "duration": 5.846875316000478,
    "reason": "",
    "checks": [
     [
@@ -1837,32 +1837,32 @@
     [
      true,
      "storage-shard-0-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
-     "beat age 0.5s -> -0.4s, advanced 4.3s in 5s"
+     "beat age 0.1s -> 1.4s, advanced 4.0s in 5s"
     ],
     [
      true,
      "storage-shard-0-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
-     "beat age 0.5s -> -0.4s, advanced 4.3s in 5s"
+     "beat age 0.8s -> 2.1s, advanced 4.0s in 5s"
     ],
     [
      true,
      "storage-shard-1-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
-     "beat age 1.8s -> -1.0s, advanced 6.2s in 5s"
+     "beat age 0.1s -> 1.4s, advanced 4.0s in 5s"
     ],
     [
      true,
      "storage-shard-1-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
-     "beat age 0.6s -> -0.4s, advanced 4.4s in 5s"
+     "beat age 0.8s -> 2.1s, advanced 4.0s in 5s"
     ],
     [
      true,
      "storage-shard-2-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
-     "beat age 0.6s -> -0.4s, advanced 4.4s in 5s"
+     "beat age 0.1s -> 1.4s, advanced 4.0s in 5s"
     ],
     [
      true,
      "storage-shard-2-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout)",
-     "beat age 0.6s -> -0.4s, advanced 4.4s in 5s"
+     "beat age 0.7s -> 2.1s, advanced 4.0s in 5s"
     ],
     [
      true,
@@ -1886,38 +1886,38 @@
     "6.del"
    ],
    "outcome": "passed",
-   "duration": 4.6333522989999665,
+   "duration": 4.720244294000167,
    "reason": "",
    "checks": [
     [
      true,
      "PUT /internal/data/{key} -> 200, stored on the key's shard",
-     "{'key': 'spec-test:5d2581', 'version': 1795112612220549242, 'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1'], 'degraded': False}"
+     "{'key': 'spec-test:19383e', 'version': 1795121717738006161, 'shard': 2, 'replicas': ['storage-shard-2-0', 'storage-shard-2-1'], 'degraded': False}"
     ],
     [
      true,
      "   and written to every replica of that shard",
-     "['storage-shard-1-0', 'storage-shard-1-1']"
+     "['storage-shard-2-0', 'storage-shard-2-1']"
     ],
     [
      true,
      "GET /internal/data/{key} -> 200 with the stored value",
-     "version 1795112612220549242, served_by storage-shard-1-0"
+     "version 1795121717738006161, served_by storage-shard-2-0"
     ],
     [
      true,
      "   the value is on the disk of both replicas with the same version",
-     "['storage-shard-1-0', 'storage-shard-1-1']"
+     "['storage-shard-2-0', 'storage-shard-2-1']"
     ],
     [
      true,
      "PUT again = update -> 200, new version",
-     "1795112612220549242 -> 1795112613386926712"
+     "1795121717738006161 -> 1795121718963930740"
     ],
     [
      true,
      "an update based on an old version is refused (409, optimistic concurrency)",
-     "{'detail': {'message': 'version conflict', 'current_version': 1795112613386926712}}"
+     "{'detail': {'message': 'version conflict', 'current_version': 1795121718963930740}}"
     ],
     [
      true,
@@ -1927,7 +1927,7 @@
     [
      true,
      "DELETE /internal/data/{key} -> 200",
-     "{'key': 'spec-test:5d2581', 'deleted': True, 'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1']}"
+     "{'key': 'spec-test:19383e', 'deleted': True, 'shard': 2, 'replicas': ['storage-shard-2-0', 'storage-shard-2-1']}"
     ],
     [
      true,
@@ -1937,11 +1937,11 @@
     [
      true,
      "   and it is deleted on both replicas",
-     "{'storage-shard-1-0': 404, 'storage-shard-1-1': 404}"
+     "{'storage-shard-2-0': 404, 'storage-shard-2-1': 404}"
     ],
     [
      true,
-     "the storage node itself (storage-shard-1-0) serves PUT / GET / DELETE /internal/data/{key} for the coordinator",
+     "the storage node itself (storage-shard-2-0) serves PUT / GET / DELETE /internal/data/{key} for the coordinator",
      "PUT 200, GET 200, DELETE 200, GET after delete 404"
     ]
    ]
@@ -1955,7 +1955,7 @@
     "2.docker"
    ],
    "outcome": "passed",
-   "duration": 0.2237756630000831,
+   "duration": 0.1704957479996665,
    "reason": "",
    "checks": [
     [
@@ -2049,7 +2049,7 @@
     "2.docker"
    ],
    "outcome": "passed",
-   "duration": 0.542452940999965,
+   "duration": 0.6995410030003768,
    "reason": "",
    "checks": [
     [
@@ -2065,12 +2065,12 @@
     [
      true,
      "image erms/coordinator:latest is built",
-     "created 2026-11-19T17:27:12, 165 MB, CMD uvicorn coordinator.app:app"
+     "created 2026-11-19T17:06:17, 165 MB, CMD uvicorn coordinator.app:app"
     ],
     [
      true,
      "image erms/storage-node:latest is built",
-     "created 2026-11-19T15:00:08, 165 MB, CMD uvicorn storage_node.app:app"
+     "created 2026-11-19T15:00:07, 165 MB, CMD uvicorn storage_node.app:app"
     ],
     [
      true,
@@ -2104,33 +2104,33 @@
     "1.d"
    ],
    "outcome": "passed",
-   "duration": 0.6446227860000135,
+   "duration": 0.3021262260003823,
    "reason": "",
    "checks": [
     [
      true,
-     "pod coordinator-6cd87f5d9b-w64tv runs its container",
-     "docker.io/erms/coordinator:latest, restarts 1"
+     "pod coordinator-698bbbccb9-n7b4r runs its container",
+     "docker.io/erms/coordinator:latest, restarts 0"
     ],
     [
      true,
-     "pod grafana-688cd64b59-kp26g runs its container",
-     "docker.io/grafana/grafana:13.2.5, restarts 1"
+     "pod grafana-5797ddf458-nxrrn runs its container",
+     "docker.io/grafana/grafana:13.2.5, restarts 0"
     ],
     [
      true,
-     "pod matching-service-5675cb9575-2d68c runs its container",
-     "docker.io/erms/matching-service:latest, restarts 1"
+     "pod matching-service-65f774d4c6-fxrwc runs its container",
+     "docker.io/erms/matching-service:latest, restarts 0"
     ],
     [
      true,
-     "pod matching-service-5675cb9575-jz6p9 runs its container",
-     "docker.io/erms/matching-service:latest, restarts 1"
+     "pod matching-service-65f774d4c6-zqmwt runs its container",
+     "docker.io/erms/matching-service:latest, restarts 0"
     ],
     [
      true,
-     "pod prometheus-66c7fdf75c-cfjf5 runs its container",
-     "docker.io/prom/prometheus:v3.15.1, restarts 1"
+     "pod prometheus-6955b6fccb-kdcz4 runs its container",
+     "docker.io/prom/prometheus:v3.15.1, restarts 0"
     ],
     [
      true,
@@ -2139,43 +2139,43 @@
     ],
     [
      true,
-     "pod request-service-7f7cf84b97-qqlnf runs its container",
-     "docker.io/erms/request-service:latest, restarts 1"
+     "pod request-service-b5547c6c6-7qc8k runs its container",
+     "docker.io/erms/request-service:latest, restarts 0"
     ],
     [
      true,
-     "pod request-service-7f7cf84b97-rdjp8 runs its container",
-     "docker.io/erms/request-service:latest, restarts 1"
+     "pod request-service-b5547c6c6-jrkvc runs its container",
+     "docker.io/erms/request-service:latest, restarts 0"
     ],
     [
      true,
      "pod storage-shard-0-0 runs its container",
-     "docker.io/erms/storage-node:latest, restarts 1"
+     "docker.io/erms/storage-node:latest, restarts 0"
     ],
     [
      true,
      "pod storage-shard-0-1 runs its container",
-     "docker.io/erms/storage-node:latest, restarts 1"
+     "docker.io/erms/storage-node:latest, restarts 0"
     ],
     [
      true,
      "pod storage-shard-1-0 runs its container",
-     "docker.io/erms/storage-node:latest, restarts 1"
+     "docker.io/erms/storage-node:latest, restarts 0"
     ],
     [
      true,
      "pod storage-shard-1-1 runs its container",
-     "docker.io/erms/storage-node:latest, restarts 1"
+     "docker.io/erms/storage-node:latest, restarts 0"
     ],
     [
      true,
      "pod storage-shard-2-0 runs its container",
-     "docker.io/erms/storage-node:latest, restarts 1"
+     "docker.io/erms/storage-node:latest, restarts 0"
     ],
     [
      true,
      "pod storage-shard-2-1 runs its container",
-     "docker.io/erms/storage-node:latest, restarts 1"
+     "docker.io/erms/storage-node:latest, restarts 0"
     ],
     [
      true,
@@ -2193,7 +2193,7 @@
     "9.2.d"
    ],
    "outcome": "passed",
-   "duration": 12.362773607000008,
+   "duration": 9.872856387999946,
    "reason": "",
    "checks": [
     [
@@ -2204,7 +2204,7 @@
     [
      true,
      "request-service -> matching-service (http://matching-service:8000/health)",
-     "{\"status\":\"ok\",\"worker\":\"matching-service-5675cb9575-jz6p9\",\"broker_connected\":t"
+     "{\"status\":\"ok\",\"worker\":\"matching-service-65f774d4c6-fxrwc\",\"broker_connected\":t"
     ],
     [
      true,
@@ -2223,32 +2223,32 @@
     ],
     [
      true,
-     "coordinator -> storage node storage-shard-0-0 (http://10.244.0.18:8000)",
+     "coordinator -> storage node storage-shard-0-0 (http://10.244.0.75:8000)",
      "ready"
     ],
     [
      true,
-     "coordinator -> storage node storage-shard-0-1 (http://10.244.0.12:8000)",
+     "coordinator -> storage node storage-shard-0-1 (http://10.244.0.70:8000)",
      "ready"
     ],
     [
      true,
-     "coordinator -> storage node storage-shard-1-0 (http://10.244.0.21:8000)",
+     "coordinator -> storage node storage-shard-1-0 (http://10.244.0.108:8000)",
      "ready"
     ],
     [
      true,
-     "coordinator -> storage node storage-shard-1-1 (http://10.244.0.23:8000)",
+     "coordinator -> storage node storage-shard-1-1 (http://10.244.0.107:8000)",
      "ready"
     ],
     [
      true,
-     "coordinator -> storage node storage-shard-2-0 (http://10.244.0.15:8000)",
+     "coordinator -> storage node storage-shard-2-0 (http://10.244.0.98:8000)",
      "ready"
     ],
     [
      true,
-     "coordinator -> storage node storage-shard-2-1 (http://10.244.0.16:8000)",
+     "coordinator -> storage node storage-shard-2-1 (http://10.244.0.99:8000)",
      "ready"
     ],
     [
@@ -2271,7 +2271,7 @@
     "12"
    ],
    "outcome": "passed",
-   "duration": 0.02234376000001248,
+   "duration": 0.008791086000201176,
    "reason": "",
    "checks": [
     [
@@ -2336,7 +2336,7 @@
     "1.d"
    ],
    "outcome": "passed",
-   "duration": 1.2158666909999738,
+   "duration": 1.3919949259998248,
    "reason": "",
    "checks": [
     [
@@ -2384,7 +2384,7 @@
     "9.2.b"
    ],
    "outcome": "passed",
-   "duration": 1.6404959689999714,
+   "duration": 2.074182546000884,
    "reason": "",
    "checks": [
     [
@@ -2482,18 +2482,18 @@
     "9.2.c"
    ],
    "outcome": "passed",
-   "duration": 1.7850612180000098,
+   "duration": 2.730767115999697,
    "reason": "",
    "checks": [
     [
      true,
      "request-service runs >= 2 replica pods from one ReplicaSet",
-     "['request-service-7f7cf84b97-qqlnf', 'request-service-7f7cf84b97-rdjp8'] <- {'request-service-7f7cf84b97'}"
+     "['request-service-b5547c6c6-7qc8k', 'request-service-b5547c6c6-jrkvc'] <- {'request-service-b5547c6c6'}"
     ],
     [
      true,
      "matching-service runs >= 2 replica pods from one ReplicaSet",
-     "['matching-service-5675cb9575-2d68c', 'matching-service-5675cb9575-jz6p9'] <- {'matching-service-5675cb9575'}"
+     "['matching-service-65f774d4c6-fxrwc', 'matching-service-65f774d4c6-zqmwt'] <- {'matching-service-65f774d4c6'}"
     ],
     [
      true,
@@ -2513,7 +2513,7 @@
     [
      true,
      "the request-service Service spreads calls over its replica pods",
-     "{'request-service-7f7cf84b97-rdjp8': 18, 'request-service-7f7cf84b97-qqlnf': 22}"
+     "{'request-service-b5547c6c6-jrkvc': 18, 'request-service-b5547c6c6-7qc8k': 22}"
     ]
    ]
   },
@@ -2525,7 +2525,7 @@
     "9.2.local"
    ],
    "outcome": "passed",
-   "duration": 0.45711280899990925,
+   "duration": 0.6799630989999059,
    "reason": "",
    "checks": [
     [
@@ -2559,7 +2559,7 @@
     "1.d"
    ],
    "outcome": "passed",
-   "duration": 17.977120481000043,
+   "duration": 21.58709652699963,
    "reason": "",
    "checks": [
     [
@@ -2590,7 +2590,7 @@
     [
      true,
      "during: the coordinator detected that storage-shard-1-1 is unavailable",
-     "6.0s after the stop; reason: no heartbeat for 7.0s"
+     "5.3s after the stop; reason: no heartbeat for 6.4s"
     ],
     [
      true,
@@ -2610,7 +2610,7 @@
     [
      true,
      "during: the write is flagged degraded (1 of 2 copies), to be copied on recovery",
-     "{'shard': 1, 'replicas': ['storage-shard-1-0'], 'version': 1795112642430972466, 'degraded': True}"
+     "{'shard': 1, 'replicas': ['storage-shard-1-0'], 'version': 1795121746002531898, 'degraded': True}"
     ],
     [
      true,
@@ -2625,12 +2625,12 @@
     [
      true,
      "during: the asynchronous pipeline (RabbitMQ -> matching -> storage) keeps processing",
-     "req-5d2a24c1f2d6 matched by matching-service-5675cb9575-2d68c"
+     "req-41b1c52c72b4 matched by matching-service-65f774d4c6-fxrwc"
     ],
     [
      true,
      "during: no read was sent to the failed node storage-shard-1-1",
-     "reads served by storage-shard-1-1: 0 before, 0 now"
+     "reads served by storage-shard-1-1: 18 before, 18 now"
     ],
     [
      true,
@@ -2645,12 +2645,12 @@
     [
      true,
      "after: storage-shard-1-1 re-registered, synchronized from storage-shard-1-0 and is ready again",
-     "6.4s after the restart command"
+     "8.1s after the restart command"
     ],
     [
      true,
      "after: the request created during the failure is now also on storage-shard-1-1's disk",
-     "version 1795112642529722433"
+     "version 1795121747809029184"
     ],
     [
      true,
@@ -2660,12 +2660,12 @@
     [
      true,
      "after: both copies of shard 1 hold the same number of records",
-     "[1108, 1108]"
+     "[1862, 1862]"
     ],
     [
      null,
      "storage-shard-1-1 log",
-     "[storage-storage-shard-1-1] INFO SYNC complete from http://10.244.0.21:8000: received 1112 records, applied 4 updates; now READY (1108 keys)"
+     "storage-storage-shard-1-1] INFO SYNC complete from http://10.244.0.108:8000: received 1868 records, applied 3 updates; now READY (1862 keys)"
     ],
     [
      true,
@@ -2685,7 +2685,7 @@
     "6.mq"
    ],
    "outcome": "passed",
-   "duration": 48.793468545999986,
+   "duration": 45.40483708600004,
    "reason": "",
    "checks": [
     [
@@ -2701,7 +2701,7 @@
     [
      true,
      "the API stays available: new requests are still accepted (201) and queued",
-     "['req-ebadb5975f76', 'req-5b2dd0bb4e28', 'req-614e5b0af4bb']"
+     "['req-787c2a34a844', 'req-9db01f7e92c5', 'req-4a35175a4632']"
     ],
     [
      true,
@@ -2726,7 +2726,7 @@
     [
      true,
      "the buffered messages are delivered and processed: all 3 requests matched",
-     "['matching-service-5675cb9575-wdwz8', 'matching-service-5675cb9575-wdwz8', 'matching-service-5675cb9575-xmkvr']"
+     "['matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-vzxk4']"
     ],
     [
      true,
@@ -2745,7 +2745,7 @@
     "11.cond"
    ],
    "outcome": "passed",
-   "duration": 18.64203811199991,
+   "duration": 15.691803774999244,
    "reason": "",
    "checks": [
     [
@@ -2766,7 +2766,7 @@
     [
      true,
      "creating requests: ids that hash to shard 2 -> 503, the others are still stored (201)",
-     "{201: 9, 503: 6}"
+     "{201: 11, 503: 4}"
     ],
     [
      true,
@@ -2795,9 +2795,14 @@
     "11.j"
    ],
    "outcome": "passed",
-   "duration": 69.02213565900001,
+   "duration": 61.82117709699969,
    "reason": "",
    "checks": [
+    [
+     null,
+     "BEFORE",
+     "2 matching pods: ['matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-vzxk4']"
+    ],
     [
      null,
      "SCALE UP",
@@ -2806,7 +2811,7 @@
     [
      true,
      "4 matching-service pods are Ready",
-     "['matching-service-5675cb9575-mkmbk', 'matching-service-5675cb9575-wdwz8', 'matching-service-5675cb9575-xcwbk', 'matching-service-5675cb9575-xmkvr']"
+     "['matching-service-65f774d4c6-5qqr9', 'matching-service-65f774d4c6-qwdmd', 'matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-vzxk4']"
     ],
     [
      true,
@@ -2816,12 +2821,12 @@
     [
      true,
      "continued availability during the scale-up: every create + health call succeeded",
-     "22/22 succeeded (100%)"
+     "20/20 succeeded (100%)"
     ],
     [
      true,
      "the new pods take part: messages were processed by pods added by the scale-up",
-     "{'matching-service-5675cb9575-xcwbk': 5, 'matching-service-5675cb9575-mkmbk': 6, 'matching-service-5675cb9575-xmkvr': 4, 'matching-service-5675cb9575-wdwz8': 5}"
+     "{'matching-service-65f774d4c6-r7wzt': 5, 'matching-service-65f774d4c6-qwdmd': 5, 'matching-service-65f774d4c6-5qqr9': 5, 'matching-service-65f774d4c6-vzxk4': 5}"
     ],
     [
      null,
@@ -2831,17 +2836,17 @@
     [
      true,
      "continued availability during the scale-down",
-     "59/59 succeeded (100%)"
+     "64/64 succeeded (100%)"
     ],
     [
      true,
-     "no request was lost while pods were added and removed: all 101 matched",
+     "no request was lost while pods were added and removed: all 104 matched",
      ""
     ],
     [
      true,
      "capacity is exact afterwards: one unit per matched request",
-     "availability 399 = 500 - 101"
+     "availability 396 = 500 - 104"
     ]
    ]
   },
@@ -2856,7 +2861,7 @@
     "11.j"
    ],
    "outcome": "passed",
-   "duration": 48.23504436899998,
+   "duration": 46.15718229500044,
    "reason": "",
    "checks": [
     [
@@ -2867,7 +2872,7 @@
     [
      true,
      "3 request-service pods are Ready",
-     "['request-service-7f7cf84b97-2ptmm', 'request-service-7f7cf84b97-qqlnf', 'request-service-7f7cf84b97-rdjp8']"
+     "['request-service-b5547c6c6-7qc8k', 'request-service-b5547c6c6-jrkvc', 'request-service-b5547c6c6-z7qp7']"
     ],
     [
      true,
@@ -2877,7 +2882,7 @@
     [
      true,
      "the Service sends traffic to all 3 pods",
-     "{'request-service-7f7cf84b97-2ptmm': 22, 'request-service-7f7cf84b97-rdjp8': 23, 'request-service-7f7cf84b97-qqlnf': 15}"
+     "{'request-service-b5547c6c6-7qc8k': 17, 'request-service-b5547c6c6-z7qp7': 20, 'request-service-b5547c6c6-jrkvc': 23}"
     ],
     [
      null,
@@ -2887,7 +2892,7 @@
     [
      true,
      "continued availability during the scale-down",
-     "67/67 succeeded (100%)"
+     "70/70 succeeded (100%)"
     ]
    ]
   },
@@ -2901,18 +2906,18 @@
     "11.i"
    ],
    "outcome": "passed",
-   "duration": 31.458021774999906,
+   "duration": 29.65186074900066,
    "reason": "",
    "checks": [
     [
      null,
      "DELETE pod",
-     "kubectl -n erms delete pod request-service-7f7cf84b97-qqlnf"
+     "kubectl -n erms delete pod request-service-b5547c6c6-7qc8k"
     ],
     [
      true,
      "the Deployment replaced the deleted request-service pod automatically",
-     "['request-service-7f7cf84b97-krfcg'] Ready 7s later"
+     "['request-service-b5547c6c6-gbn8n'] Ready 4s later"
     ],
     [
      true,
@@ -2922,17 +2927,17 @@
     [
      null,
      "DELETE pod while it is processing messages",
-     "kubectl -n erms delete pod matching-service-5675cb9575-wdwz8"
+     "kubectl -n erms delete pod matching-service-65f774d4c6-r7wzt"
     ],
     [
      true,
      "the Deployment replaced the deleted matching-service pod",
-     "['matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+     "['matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']"
     ],
     [
      true,
      "no message was lost: all 8 requests queued around the pod kill were matched",
-     "{'matching-service-5675cb9575-xmkvr': 6, 'matching-service-5675cb9575-wdwz8': 2}"
+     "{'matching-service-65f774d4c6-r7wzt': 4, 'matching-service-65f774d4c6-vzxk4': 4}"
     ],
     [
      true,
@@ -2942,12 +2947,12 @@
     [
      null,
      "DELETE pod",
-     "kubectl -n erms delete pod coordinator-6cd87f5d9b-w64tv"
+     "kubectl -n erms delete pod coordinator-698bbbccb9-n7b4r"
     ],
     [
      true,
      "the coordinator pod was recreated and all 6 storage nodes re-registered with it",
-     "['coordinator-6cd87f5d9b-n48wj']"
+     "['coordinator-698bbbccb9-9cl8n']"
     ],
     [
      true,
@@ -2970,7 +2975,7 @@
     "10.recover"
    ],
    "outcome": "passed",
-   "duration": 11.373297848999755,
+   "duration": 10.566277812000408,
    "reason": "",
    "checks": [
     [
@@ -2986,12 +2991,12 @@
     [
      true,
      "reads never failed while the pod was down and recreated",
-     "26/26 succeeded (100%)"
+     "25/25 succeeded (100%)"
     ],
     [
      true,
      "reads failed over to the replica storage-shard-1-1",
-     "{'storage-shard-1-0': 15, 'storage-shard-1-1': 11}"
+     "{'storage-shard-1-0': 16, 'storage-shard-1-1': 9}"
     ],
     [
      true,
@@ -3001,7 +3006,7 @@
     [
      true,
      "the write made while storage-shard-1-0 was gone was synchronized to it",
-     "version 1795112857061597680"
+     "version 1795121943613944264"
     ]
    ]
   },
@@ -3013,7 +3018,7 @@
     "X39.both"
    ],
    "outcome": "passed",
-   "duration": 0.8092134949999945,
+   "duration": 0.9168537770001421,
    "reason": "",
    "checks": [
     [
@@ -3056,7 +3061,7 @@
     "X39.metrics"
    ],
    "outcome": "passed",
-   "duration": 5.75683868200008,
+   "duration": 4.446091104000061,
    "reason": "",
    "checks": [
     [
@@ -3067,17 +3072,17 @@
     [
      true,
      "   ... with erms_http_requests_total",
-     "['erms_http_requests_total{method=\"GET\",route=\"/health\",service=\"request-service\",status=\"200\"} 222.0']"
+     "['erms_http_requests_total{method=\"GET\",route=\"/health\",service=\"request-service\",status=\"200\"} 17.0']"
     ],
     [
      true,
      "   ... with erms_requests_created_total",
-     "['erms_requests_created_total{type=\"rescue\"} 0.0']"
+     "['erms_requests_created_total{type=\"medicine\"} 0.0']"
     ],
     [
      true,
      "   ... with erms_requests_published_total",
-     "['erms_requests_published_total{result=\"ok\",routing_key=\"request.created\"} 79.0']"
+     "['erms_requests_published_total{result=\"ok\",routing_key=\"request.created\"} 8.0']"
     ],
     [
      true,
@@ -3087,7 +3092,7 @@
     [
      true,
      "coordinator: /metrics with the live state of all 6 storage nodes",
-     "['erms_storage_node_up{node=\"storage-shard-0-0\",shard=\"0\"} 1.0', 'erms_storage_node_up{node=\"storage-shard-2-0\",shard=\"2\"} 1.0']"
+     "['erms_storage_node_up{node=\"storage-shard-0-0\",shard=\"0\"} 1.0', 'erms_storage_node_up{node=\"storage-shard-1-0\",shard=\"1\"} 1.0']"
     ],
     [
      true,
@@ -3117,7 +3122,7 @@
     [
      true,
      "   ... with erms_matches_total",
-     "['erms_matches_total{result=\"matched\",via=\"queue\"} 47.0']"
+     "['erms_matches_total{result=\"matched\",via=\"queue\"} 0.0']"
     ],
     [
      true,
@@ -3127,7 +3132,7 @@
     [
      true,
      "   ... with erms_messages_consumed_total",
-     "['erms_messages_consumed_total{routing_key=\"request.created\"} 47.0']"
+     "['erms_messages_consumed_total{routing_key=\"request.created\"} 0.0']"
     ],
     [
      true,
@@ -3137,32 +3142,32 @@
     [
      true,
      "storage node storage-shard-0-0: /metrics with its own records and resync metrics",
-     "erms_storage_local_keys{node=\"storage-shard-0-0\",shard=\"0\"} 1223.0"
+     "erms_storage_local_keys{node=\"storage-shard-0-0\",shard=\"0\"} 1912.0"
     ],
     [
      true,
      "storage node storage-shard-0-1: /metrics with its own records and resync metrics",
-     "erms_storage_local_keys{node=\"storage-shard-0-1\",shard=\"0\"} 1223.0"
+     "erms_storage_local_keys{node=\"storage-shard-0-1\",shard=\"0\"} 1912.0"
     ],
     [
      true,
      "storage node storage-shard-1-0: /metrics with its own records and resync metrics",
-     "erms_storage_local_keys{node=\"storage-shard-1-0\",shard=\"1\"} 1194.0"
+     "erms_storage_local_keys{node=\"storage-shard-1-0\",shard=\"1\"} 1944.0"
     ],
     [
      true,
      "storage node storage-shard-1-1: /metrics with its own records and resync metrics",
-     "erms_storage_local_keys{node=\"storage-shard-1-1\",shard=\"1\"} 1194.0"
+     "erms_storage_local_keys{node=\"storage-shard-1-1\",shard=\"1\"} 1944.0"
     ],
     [
      true,
      "storage node storage-shard-2-0: /metrics with its own records and resync metrics",
-     "erms_storage_local_keys{node=\"storage-shard-2-0\",shard=\"2\"} 1241.0"
+     "erms_storage_local_keys{node=\"storage-shard-2-0\",shard=\"2\"} 1963.0"
     ],
     [
      true,
      "storage node storage-shard-2-1: /metrics with its own records and resync metrics",
-     "erms_storage_local_keys{node=\"storage-shard-2-1\",shard=\"2\"} 1241.0"
+     "erms_storage_local_keys{node=\"storage-shard-2-1\",shard=\"2\"} 1963.0"
     ]
    ]
   },
@@ -3175,13 +3180,13 @@
     "X39.rabbit"
    ],
    "outcome": "passed",
-   "duration": 0.6594818969999778,
+   "duration": 2.440156307000507,
    "reason": "",
    "checks": [
     [
      true,
      "job 'coordinator': 1 target(s), all up",
-     "['coordinator-6cd87f5d9b-n48wj']"
+     "['coordinator-698bbbccb9-9cl8n']"
     ],
     [
      true,
@@ -3191,12 +3196,12 @@
     [
      true,
      "job 'request-service': 2 target(s), all up",
-     "['request-service-7f7cf84b97-krfcg', 'request-service-7f7cf84b97-rdjp8']"
+     "['request-service-b5547c6c6-gbn8n', 'request-service-b5547c6c6-jrkvc']"
     ],
     [
      true,
      "job 'matching-service': 2 target(s), all up",
-     "['matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+     "['matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']"
     ],
     [
      true,
@@ -3234,7 +3239,7 @@
     "X39.secure"
    ],
    "outcome": "passed",
-   "duration": 1.0770038470002419,
+   "duration": 0.4008825360001538,
    "reason": "",
    "checks": [
     [
@@ -3288,7 +3293,7 @@
     "X39.nodata"
    ],
    "outcome": "passed",
-   "duration": 14.769996092000156,
+   "duration": 14.607318247999956,
    "reason": "",
    "checks": [
     [
@@ -3351,38 +3356,38 @@
     "X39.traffic"
    ],
    "outcome": "passed",
-   "duration": 8.724813944000289,
+   "duration": 9.992102683000212,
    "reason": "",
    "checks": [
     [
      true,
      "created: +6 after 6 requests",
-     "242 -> 248"
+     "404 -> 410"
     ],
     [
      true,
      "published: +6 after 6 requests",
-     "90 -> 96"
+     "222 -> 228"
     ],
     [
      true,
      "POST /requests 201: +6 after 6 requests",
-     "242 -> 248"
+     "404 -> 410"
     ],
     [
      true,
      "matched via queue: +6 after 6 requests",
-     "50 -> 56"
+     "51 -> 57"
     ],
     [
      true,
      "time-to-match samples: +6 after 6 requests",
-     "50 -> 56"
+     "51 -> 57"
     ],
     [
      true,
      "the recorded time-to-match equals the real one (created_at -> matched_at of the requests)",
-     "metric average 2.10s, requests' own timestamps 2.06s"
+     "metric average 2.14s, requests' own timestamps 2.12s"
     ]
    ]
   },
@@ -3394,7 +3399,7 @@
     "X39.failure"
    ],
    "outcome": "passed",
-   "duration": 24.2065721030001,
+   "duration": 20.567917372000466,
    "reason": "",
    "checks": [
     [
@@ -3410,7 +3415,7 @@
     [
      true,
      "during: the dashboard shows storage-shard-1-1 DOWN (0, red)",
-     "12s after the stop"
+     "10s after the stop"
     ],
     [
      true,
@@ -3450,12 +3455,12 @@
     [
      true,
      "the node's timeline over the test shows the red stretch (min 0) and ends green (1)",
-     "min over last 51s = 0, now = 1"
+     "min over last 50s = 0, now = 1"
     ],
     [
      true,
      "after: the restarted node's resync is recorded (count, records applied, duration on the dashboard)",
-     "resyncs 1, missed writes applied 1, resync took 259 ms"
+     "resyncs 1, missed writes applied 1, resync took 209 ms"
     ]
    ]
   },
@@ -3467,7 +3472,7 @@
     "X39.failure"
    ],
    "outcome": "passed",
-   "duration": 8.163445214000149,
+   "duration": 9.571097841999745,
    "reason": "",
    "checks": [
     [
@@ -3488,12 +3493,12 @@
     [
      true,
      "reads kept working: none failed while the replica was killed and came back",
-     "21/21 succeeded (100%)"
+     "19/19 succeeded (100%)"
     ],
     [
      true,
      "reads switched to the other replica of the shard",
-     "{'storage-shard-1-0': 11, 'storage-shard-1-1': 10}"
+     "{'storage-shard-1-0': 10, 'storage-shard-1-1': 9}"
     ],
     [
      true,
@@ -3525,7 +3530,7 @@
     "X18.install"
    ],
    "outcome": "passed",
-   "duration": 0.7375840400002289,
+   "duration": 0.8034320090005167,
    "reason": "",
    "checks": [
     [
@@ -3570,7 +3575,7 @@
     "X18.secret"
    ],
    "outcome": "passed",
-   "duration": 1.0228565889999572,
+   "duration": 1.0831341950001843,
    "reason": "",
    "checks": [
     [
@@ -3581,7 +3586,7 @@
     [
      true,
      "between 2 and 6 pods",
-     "min 2, max 6, polling every 5s"
+     "min 2, max 6"
     ],
     [
      true,
@@ -3641,18 +3646,18 @@
     "X18.visible"
    ],
    "outcome": "passed",
-   "duration": 169.77835578999975,
+   "duration": 126.6159264160001,
    "reason": "",
    "checks": [
     [
      true,
      "before: 2 matching pods, queue empty",
-     "['matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+     "['matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']"
     ],
     [
      true,
      "200 requests accepted and queued",
-     "in 2.9s"
+     "in 1.6s"
     ],
     [
      true,
@@ -3662,27 +3667,27 @@
     [
      true,
      "KEDA scaled matching-service UP by itself as the queue grew",
-     "HPA asked for more pods 15s after the burst started"
+     "HPA asked for more pods 8s after the burst started"
     ],
     [
      true,
      "... up to the maximum of 6 pods",
-     "6 Ready pods 21s after the burst"
+     "6 Ready pods 12s after the burst"
     ],
     [
      null,
      "timeline (seconds, ready pods, desired)",
-     "[(0, 2, 2), (15, 2, 6), (21, 6, 6), (99, 4, 6), (101, 4, 4), (112, 2, 4), (115, 2, 2)]"
+     "[(0, 2, 2), (8, 2, 6), (12, 6, 6), (61, 4, 4), (75, 2, 4), (78, 2, 2)]"
     ],
     [
      true,
      "the extra pods did real work (requests matched by pods added by KEDA)",
-     "{'matching-service-5675cb9575-xmkvr': 48, 'matching-service-5675cb9575-5gq7g': 44, 'matching-service-5675cb9575-mc9hk': 27, 'matching-service-5675cb9575-d5rhs': 26, 'matching-service-5675cb9575-xs9ss': 27, 'matching-service-5675cb9575-jd9z8': 28}"
+     "{'matching-service-65f774d4c6-vzxk4': 39, 'matching-service-65f774d4c6-nx72v': 39, 'matching-service-65f774d4c6-488t8': 32, 'matching-service-65f774d4c6-jrkk9': 30, 'matching-service-65f774d4c6-kfmvs': 31, 'matching-service-65f774d4c6-68gzr': 29}"
     ],
     [
      true,
      "all 200 requests matched through the queue",
-     "queue drained and all matched 76s after the burst"
+     "queue drained and all matched 49s after the burst"
     ],
     [
      true,
@@ -3692,12 +3697,12 @@
     [
      true,
      "KEDA scaled matching-service back DOWN to 2 after the queue drained",
-     "2 pods again 144s after the burst (68s after the last match)"
+     "2 pods again 106s after the burst (57s after the last match)"
     ],
     [
      true,
      "the API stayed available the whole time",
-     "239/239 succeeded (100%)"
+     "176/176 succeeded (100%)"
     ],
     [
      true,
@@ -3719,7 +3724,7 @@
     "X18.manual"
    ],
    "outcome": "passed",
-   "duration": 175.391184758,
+   "duration": 167.24751174499943,
    "reason": "",
    "checks": [
     [
@@ -3735,7 +3740,7 @@
     [
      true,
      "the pin holds even with an empty queue (45 s later still 3 pods)",
-     "['matching-service-5675cb9575-2fjgz', 'matching-service-5675cb9575-5gq7g', 'matching-service-5675cb9575-xmkvr']"
+     "['matching-service-65f774d4c6-7qhzs', 'matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']"
     ],
     [
      true,

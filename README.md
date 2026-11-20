@@ -123,8 +123,8 @@ The test suite runs every panel query through Grafana and fails if any would sho
 
 ## Autoscaling on queue depth (KEDA)
 
-Extension #18, Kubernetes. KEDA checks the number of messages waiting in `matching.requests` every 5 s and drives a
-HorizontalPodAutoscaler: **desired matching pods = ceil(waiting / 5)**, between 2 and 6. Scale-up is immediate; scale-down
+Extension #18, Kubernetes. KEDA turns the number of messages waiting in `matching.requests` into a metric for a
+HorizontalPodAutoscaler it creates, which re-checks it every 15 s: **desired matching pods = ceil(waiting / 5)**, between 2 and 6. Scale-up is immediate; scale-down
 waits 30 s after the queue drained (instead of the default 5 minutes), so a demo burst shows both directions.
 
 ```bash
@@ -284,7 +284,8 @@ BROKER_START_CMD="kubectl -n erms scale sts rabbitmq --replicas=1" \
 BROKER_RESTART_CMD="kubectl -n erms delete pod rabbitmq-0" \
 MATCHING_STOP_CMD="./scripts/matching-replicas.sh 0" \
 MATCHING_START_CMD="./scripts/matching-replicas.sh auto" \
-.venv/bin/python -m pytest -v tests/integration      # 18 pass; the precise stale-replica test is Compose-only
+.venv/bin/python -m pytest -v tests/integration      # 18 tests; the stale-replica test is Compose-only and is left out
+                                                     # of a Kubernetes run (nothing skipped)
 
 # Kubernetes-only tests: pod deletion & recovery, scaling with continued availability, Secret credentials,
 # losing both pods of a shard, coordinator restart (~2 min)
@@ -317,7 +318,8 @@ whole PDF requirement by requirement with its verdict.
 ./scripts/spec-test.sh k8s          # Kubernetes       (~11 min; also deletes and scales pods, KEDA burst test)
 .venv/bin/python tests/spec/report.py   # merge both runs -> tests/spec/reports/spec-report-combined.md
 ```
-Kubernetes-only requirements show as SKIP in the Compose run; the merged report combines both runs. Reports are
+Kubernetes-only tests are not part of a Compose run (they are left out, so it shows e.g. 48 passed, nothing skipped;
+their requirements show as K8S ONLY there); the merged report combines both runs. Reports are
 saved to `tests/spec/reports/spec-<target>.{json,md}`. The two extensions are tested by the same harness
 (`tests/spec/test_x_extensions.py`, requirements `X39.*` / `X18.*`) and reported in their own sections; run only them
 with `./scripts/spec-test.sh k8s -k "x39 or x18"`.

@@ -17,11 +17,13 @@ from requirements import BY_ID
 
 RESULTS: dict[str, dict] = {}
 DECLARED: set[str] = set()   # requirement ids tagged on ANY collected test (also ones deselected with -k)
+OTHER_TARGET: dict[str, list[str]] = {}   # Kubernetes-only tests left out of a Compose run: name -> requirement ids
 STARTED = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def pytest_configure(config):
     config.addinivalue_line("markers", "req(*ids): PDF requirement ids verified by this test (tests/spec/requirements.py)")
+    config.addinivalue_line("markers", "k8s_only: needs Kubernetes; left out entirely when the target is Docker Compose")
 
 
 @pytest.hookimpl(tryfirst=True)          # before -k / -m deselection, so the full mapping is known
@@ -34,6 +36,15 @@ def pytest_collection_modifyitems(config, items):
         if unknown:
             raise pytest.UsageError(f"{item.nodeid}: unknown requirement ids {unknown}")
         DECLARED.update(marker.args)
+    # Kubernetes-only tests do not belong to a Docker Compose run: remove them (not run, not reported as skipped)
+    if spec_env.TARGET != "k8s":
+        keep = []
+        for item in items:
+            if item.get_closest_marker("k8s_only"):
+                OTHER_TARGET[item.name] = list(item.get_closest_marker("req").args)
+            else:
+                keep.append(item)
+        items[:] = keep
 
 
 def _record(item) -> dict:
@@ -82,6 +93,7 @@ def pytest_terminal_summary(terminalreporter):
         return
     run = {"target": spec_env.TARGET, "endpoints": spec_env.platform().describe(), "started": STARTED,
            "finished": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "declared": sorted(DECLARED),
+           "other_target": OTHER_TARGET,
            "results": list(RESULTS.values())}
     os.makedirs(report.REPORT_DIR, exist_ok=True)
     base = os.path.join(report.REPORT_DIR, f"spec-{spec_env.TARGET}")

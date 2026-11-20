@@ -19,16 +19,19 @@ REPORT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "reports")
 WIDTH = 118
 OK, BAD, INFO = "✔", "✘", "·"
 STYLE = {"PASS": "green", "FAIL": "red", "SKIP": "yellow", "NOT COVERED": "red", "OPTIONAL": "cyan",
-         "NOT RUN": "yellow"}
+         "NOT RUN": "yellow", "K8S ONLY": "cyan"}
 
 
 def verdict(req_id: str, runs: list[dict]) -> tuple[str, list[tuple[str, str, str]]]:
     """(PASS|FAIL|SKIP|NOT RUN|NOT COVERED|OPTIONAL, [(target, test name, outcome)]).
-    NOT RUN = a test covers it but was deselected (-k); NOT COVERED = no test covers it at all."""
+    NOT RUN = a test covers it but was deselected (-k); NOT COVERED = no test covers it at all;
+    K8S ONLY = only Kubernetes-only tests cover it and this is a Docker Compose run (they are left out there)."""
     hits = [(run["target"], r["name"], r["outcome"]) for run in runs for r in run["results"] if req_id in r["reqs"]]
     if not hits:
         if not BY_ID[req_id].mandatory:
             return "OPTIONAL", hits
+        if any(req_id in ids for run in runs for ids in run.get("other_target", {}).values()):
+            return "K8S ONLY", hits
         return ("NOT RUN" if any(req_id in run.get("declared", []) for run in runs) else "NOT COVERED"), hits
     outcomes = {o for _, _, o in hits}
     if "failed" in outcomes:
@@ -55,9 +58,12 @@ def render(runs: list[dict]) -> list[tuple[str, str | None]]:
         n = {k: sum(r["outcome"] == k for r in tests) for k in ("passed", "failed", "skipped")}
         checks = [c for r in tests for c in r["checks"] if c[0] is not None]
         add(f" target: {run['target']:<8} {run['endpoints']}")
-        add(f"         run {run['started']} -> {run['finished']}   tests: {n['passed']} passed, {n['failed']} failed,"
-            f" {n['skipped']} skipped   individual checks: {sum(c[0] for c in checks)} passed,"
-            f" {sum(not c[0] for c in checks)} failed")
+        skipped = f", {n['skipped']} skipped" if n["skipped"] else ""
+        add(f"         run {run['started']} -> {run['finished']}   tests: {n['passed']} passed, {n['failed']} failed"
+            f"{skipped}   individual checks: {sum(c[0] for c in checks)} passed, {sum(not c[0] for c in checks)} failed")
+        if run.get("other_target"):
+            add(f"         ({len(run['other_target'])} Kubernetes-only tests are not part of a Docker Compose run;"
+                f" they run with SPEC_TARGET=k8s)")
     add(bar, "bold")
 
     # ---------------------------------------------------------------- part 1: every check of every test
@@ -116,7 +122,7 @@ def render(runs: list[dict]) -> list[tuple[str, str | None]]:
 
     add()
     add(bar, "bold")
-    order = ("PASS", "FAIL", "SKIP", "NOT RUN", "NOT COVERED", "OPTIONAL")
+    order = ("PASS", "FAIL", "SKIP", "K8S ONLY", "NOT RUN", "NOT COVERED", "OPTIONAL")
     for label, reqs in (("PDF REQUIREMENTS", [r for r in CATALOG if not r.extension]),
                         ("EXTENSION REQUIREMENTS", [r for r in CATALOG if r.extension])):
         if not reqs:
@@ -128,9 +134,9 @@ def render(runs: list[dict]) -> list[tuple[str, str | None]]:
         summary = ", ".join(f"{k} {t[k]}" for k in order if t.get(k))
         add(f" {label}: {len(reqs)} listed ({sum(r.mandatory for r in reqs)} mandatory) -> {summary}",
             "red" if t.get("FAIL") or t.get("NOT COVERED") else "green")
-    if totals.get("SKIP"):
-        add(" SKIP = only verifiable on the other deployment target; merge both runs with: "
-            ".venv/bin/python tests/spec/report.py", "yellow")
+    if totals.get("K8S ONLY") or totals.get("SKIP"):
+        add(" K8S ONLY = a Kubernetes requirement, verified by the Kubernetes run (not part of a Docker Compose run);"
+            " merge both runs with: .venv/bin/python tests/spec/report.py", "cyan")
     add(bar, "bold")
     return out
 
@@ -140,8 +146,11 @@ def render_markdown(runs: list[dict]) -> str:
     for run in runs:
         tests = run["results"]
         n = {k: sum(r["outcome"] == k for r in tests) for k in ("passed", "failed", "skipped")}
+        extra = f", {n['skipped']} skipped" if n["skipped"] else ""
+        other = (f" ({len(run['other_target'])} Kubernetes-only tests not part of this run)"
+                 if run.get("other_target") else "")
         md.append(f"* **{run['target']}** ({run['endpoints']}), {run['started']} -> {run['finished']}: "
-                  f"{n['passed']} passed, {n['failed']} failed, {n['skipped']} skipped")
+                  f"{n['passed']} passed, {n['failed']} failed{extra}{other}")
     md += ["", "## Requirement matrix", ""]
     for sec, title in SECTIONS.items():
         md += [f"### {title}", "", "| Verdict | Id | Requirement (PDF) | Verified by |", "|---|---|---|---|"]

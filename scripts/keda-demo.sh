@@ -30,7 +30,7 @@ row() { printf "  t=%4ss  waiting in queue: %4s   matching pods ready: %s   KEDA
 
 step "KEDA: autoscaling matching-service on RabbitMQ queue depth"
 $K get scaledobject matching-service
-info "rule: desired pods = ceil(messages waiting / 5), min 2, max 6; checked every 5 s"
+info "rule: desired pods = ceil(messages waiting / 5), min 2, max 6; the HPA re-checks the queue every 15 s"
 $K get hpa keda-hpa-matching-service
 $K get pods -l app=matching-service; pause
 

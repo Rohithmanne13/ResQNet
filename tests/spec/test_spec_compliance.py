@@ -44,8 +44,8 @@ HEARTBEAT_TIMEOUT = 6      # coordinator HEARTBEAT_TIMEOUT in both deployments
 MAX_KM = 50                # matching-service MAX_MATCH_DISTANCE_KM in both deployments
 
 req = pytest.mark.req
-k8s_only = pytest.mark.skipif(P.name != "k8s", reason="Kubernetes requirement: verified by the run against the "
-                                                      "minikube deployment (SPEC_TARGET=k8s)")
+# Kubernetes-only tests: part of the Kubernetes run only; a Docker Compose run leaves them out (conftest.py)
+k8s_only = pytest.mark.k8s_only
 
 
 # ============================================================================= helpers
@@ -1507,7 +1507,11 @@ def test_k8s_scale_matching_service_with_continued_availability(check, area, mad
     """§9.2 'Microservice scaling' / §10 'Increase the number of replicas of a microservice and demonstrate continued
     availability' - matching-service 2 -> 4 -> 2 while traffic keeps flowing."""
     res = made.resource(area.at(2, 0), availability=500, name="Scaling-test store")
+    # start from exactly 2 pods: with KEDA, earlier traffic may have autoscaled matching-service already
+    P.matching_replicas(2)
+    wait_for(lambda: len(P.matching_workers()) == 2 and consumers() == 2, timeout=120, desc="2 matching pods")
     before = P.matching_workers()
+    check.note("BEFORE", f"2 matching pods: {sorted(before)}")
     created: list[str] = []
     lock = threading.Lock()
 

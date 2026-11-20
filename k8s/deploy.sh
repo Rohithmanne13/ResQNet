@@ -95,6 +95,13 @@ kubectl -n erms rollout status deployment/matching-service --timeout=180s
 kubectl -n erms rollout status deployment/request-service --timeout=180s
 kubectl -n erms rollout status deployment/prometheus --timeout=180s
 kubectl -n erms rollout status deployment/grafana --timeout=180s
+# Pods can be Ready while a restarted shard is still re-syncing; only report success once the coordinator
+# says every shard has ready replicas (otherwise the first writes to that shard would get 503).
+echo ">> waiting until all 3 shards are ready"
+for _ in $(seq 1 90); do
+  kubectl -n erms exec deploy/coordinator -- python -c "import json,urllib.request,sys; c=json.load(urllib.request.urlopen('http://localhost:8000/cluster')); sys.exit(0 if all(len(s['nodes'])>=2 and all(n['status']=='ready' for n in s['nodes']) for s in c['shards'].values()) else 1)" >/dev/null 2>&1 && break
+  sleep 2
+done
 kubectl -n erms get pods -o wide
 IP=$(minikube ip 2>/dev/null || echo "<node-ip>")
 cat <<MSG

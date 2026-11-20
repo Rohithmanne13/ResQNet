@@ -1,7 +1,8 @@
 # Autoscaling of matching-service on RabbitMQ queue depth with KEDA (extension #18).
-# Requires KEDA in the cluster (k8s/deploy.sh installs it). KEDA reads the number of messages waiting in queue
-# matching.requests every 5 s and drives a HorizontalPodAutoscaler (keda-hpa-matching-service):
-#   desired matching pods = ceil(waiting messages / 5), at least 2, at most 6.
+# Requires KEDA in the cluster (k8s/deploy.sh installs it). KEDA serves the number of messages waiting in queue
+# matching.requests as an external metric to a HorizontalPodAutoscaler it creates (keda-hpa-matching-service), which
+# re-checks it every 15 s (Kubernetes default):  desired matching pods = ceil(waiting messages / 5), between 2 and 6.
+# (pollingInterval / cooldownPeriod are not set: with minReplicaCount > 0 KEDA ignores them.)
 # The broker login comes from Secret keda-rabbitmq (key "host" = amqp URL, built by deploy.sh from
 # rabbitmq-credentials), never from this file.
 #
@@ -23,8 +24,6 @@ spec:
   scaleTargetRef: { name: matching-service }     # the Deployment in k8s/40-matching-service.yaml
   minReplicaCount: 2        # always 2 consumers (availability), as before
   maxReplicaCount: 6
-  pollingInterval: 5        # seconds between queue-depth checks
-  cooldownPeriod: 30
   advanced:
     horizontalPodAutoscalerConfig:
       behavior:
