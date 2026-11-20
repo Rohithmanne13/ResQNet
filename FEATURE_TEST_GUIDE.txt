@@ -29,8 +29,9 @@
    PART 11  Extension #39: Prometheus + Grafana monitoring
    PART 12  Extension #18: KEDA autoscaling
    PART 13  The web UI
-   PART 14  The automated test suites (proof of everything at once)
-   PART 15  Viva cheat sheet: the 10 testing items of PDF §11 -> where they are proven
+   PART 14  Protections against rare failures (proven by automated tests)
+   PART 15  The automated test suites (proof of everything at once)
+   PART 16  Viva cheat sheet: the 10 testing items of PDF §11 -> where they are proven
 
 
 =====================================================================================================================
@@ -296,6 +297,15 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
  WHY     A failed attempt goes to the retry queue (5 s delay, without blocking a worker); after 12 attempts the
          request is "unmatched" instead of retrying forever. The sweeper revives "unmatched" requests as soon as a
          suitable resource exists, so nobody is forgotten.
+
+ TEST 5.7  RabbitMQ management UI
+ DO      Open http://localhost:30672 (Compose: http://localhost:15672). User: erms, password:
+         $ ./scripts/rabbit-password.sh                      # Compose: COMPOSE=1 ./scripts/rabbit-password.sh
+         Go to Queues -> matching.requests, then run TEST 5.2 again.
+ EXPECT  Exchanges erms.requests + erms.retry; queues matching.requests (2 consumers) + matching.retry. The
+         "Queued messages" chart rises and falls back to 0 during the burst. Login "guest" is refused.
+ WHY     This is the broker's own view of the asynchronous messaging. The retry queue holds failed attempts for
+         5 s and then sends them back to erms.requests (delayed retry without blocking a worker).
 
 
 =====================================================================================================================
@@ -577,7 +587,63 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
 
 
 =====================================================================================================================
- PART 14 - THE AUTOMATED TEST SUITES (everything above, checked automatically)
+ PART 14 - PROTECTIONS AGAINST RARE FAILURES (proven by automated tests)
+=====================================================================================================================
+ These protect against failures that are hard to cause by hand (a crash at one exact moment), so each one is
+ proven by an automated test that forces that exact situation. Run one with the command shown; EXPECT "1 passed".
+ [U] = unit test:        .venv/bin/python -m pytest -v tests/unit -k NAME            (no cluster needed)
+ [K] = Kubernetes test:  .venv/bin/python -m pytest -v -s tests/k8s -k NAME          (after the export line in PART 15)
+ [I] = integration test: .venv/bin/python -m pytest -v tests/integration -k NAME     (on Compose; on Kubernetes add
+                         the variables from RUN_AND_TEST_GUIDE.txt PART 8)
+
+ 14.1  Capacity leak repaired (the "reconciler")                [I] test_capacity_leak_is_reconciled
+                                                               [I] test_lost_claim_is_reconciled
+ EXPECT  A unit left claimed by a crashed matcher is given back; a request that lost its claim is re-opened and
+         matched again.
+ WHY     A matcher can crash between "take a unit" and "mark the request matched". The reconciler in every
+         matching pod finds such leftovers after a grace period (60 s) and repairs them with compare-and-set.
+
+ 14.2  A returning stale replica is never trusted alone         [I] test_coordinator_restart_never_serves_a_stale_replica
+                                                               [K] test_coordinator_restart_rebuilds_the_cluster_safely
+                                                               [U] test_first_returning_replica_is_not_trusted_alone
+ EXPECT  After a coordinator restart, a replica that may have missed writes is "waiting" (never serves reads) until
+         its partner is back or 8 s pass; then both merge each other's data, newest version wins.
+ WHY     Without a ready partner there is nobody to check its data against; serving it could return old values.
+
+ 14.3  A lost sync order is re-sent (found and fixed on 2026-11-20)   [U] test_lost_sync_order_is_resent_instead_of_deadlocking
+                                                               [U] test_node_is_never_ready_without_completing_its_sync
+ EXPECT  If the heartbeat reply carrying "copy your partner's data now" is lost, the next heartbeat sends it again;
+         a node only counts as ready after it reports that exact sync (sync_id) as done.
+ WHY     Otherwise a node could stay out of service forever, or be trusted without the writes it missed.
+
+ 14.4  Write accepted with one copy survives losing both pods    [K] test_degraded_write_survives_losing_both_pods_of_a_shard
+ EXPECT  A "degraded" write (one copy) is still there after BOTH pods of the shard are deleted and come back.
+ WHY     Every write is flushed to disk on a persistent volume before it is acknowledged.
+
+ 14.5  Versions never go backwards                              [U] test_versions_never_go_backwards_after_coordinator_restart
+ EXPECT  After a coordinator restart, new versions are higher than every version already stored.
+ WHY     Newest-version-wins would otherwise silently drop new writes (e.g. after a clock jump).
+
+ 14.6  Redelivered message = no second unit                     [U] test_try_assign_is_idempotent_per_request
+                                                               [U] test_matcher_reuses_a_claim_it_already_holds
+ EXPECT  Processing the same request twice keeps exactly one unit.
+ WHY     RabbitMQ re-delivers a message if a worker crashes before acknowledging it (at-least-once delivery).
+
+ 14.7  Scale-down loses nothing (graceful drain)                [K] test_scale_matching_service_to_4
+ EXPECT  4 -> 2 matching pods while work is running: every request matched, capacity exact, API always answering.
+ WHY     A stopping matching pod stops taking messages and finishes the ones it holds before exiting.
+
+ 14.8  Queued messages survive a broker restart                 [I] test_queued_requests_survive_broker_restart_and_match_503_when_matching_down
+                                                               [I] test_broker_outage_requests_are_not_lost
+ EXPECT  Messages waiting in RabbitMQ are still there after it restarts and are then matched.
+ WHY     Durable queue + persistent messages + RabbitMQ data on a persistent volume.
+
+ 14.9  RabbitMQ password from a Secret                          [K] test_rabbitmq_credentials_come_from_a_secret
+ EXPECT  Pods get the password via secretKeyRef; the default guest:guest login is rejected.
+
+
+=====================================================================================================================
+ PART 15 - THE AUTOMATED TEST SUITES (everything above, checked automatically)
 =====================================================================================================================
  $ .venv/bin/python -m pytest -q tests/unit                       EXPECT 40 passed              (~15 s, no cluster)
  $ ./scripts/spec-test.sh k8s                                     EXPECT 72 passed, 0 failed    (~15 min)
@@ -593,7 +659,7 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
 
 
 =====================================================================================================================
- PART 15 - VIVA CHEAT SHEET: PDF §11 TESTING ITEMS -> WHERE THEY ARE PROVEN
+ PART 16 - VIVA CHEAT SHEET: PDF §11 TESTING ITEMS -> WHERE THEY ARE PROVEN
 =====================================================================================================================
  Request creation, retrieval, status updates               -> 2.3, 2.4, 2.7, 2.10        UI 13.4
  Resource registration and availability updates            -> 2.1, 2.2, 2.8              UI 13.3
@@ -605,4 +671,8 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
  Recovery and data synchronization after node recovery      -> 9.4, 9.5, 9.6
  Kubernetes pod failure and automatic recovery              -> 10.3, 9.5
  Kubernetes-based microservice scaling                      -> 10.4, 12.2
- "Normal AND failure conditions"                            -> normal: PARTS 2-7; failure: 5.4, 5.5, 9.2-9.6, 10.3
+ "Normal AND failure conditions"                            -> normal: PARTS 2-7; failure: 5.4, 5.5, 9.2-9.6, 10.3,
+                                                               PART 14
+ Extension #39 Prometheus + Grafana                         -> PART 11, UI 13.8
+ Extension #18 KEDA                                         -> PART 12, UI 13.7
+ Web UI                                                     -> PART 13
