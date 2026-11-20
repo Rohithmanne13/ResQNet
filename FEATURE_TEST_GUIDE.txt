@@ -103,7 +103,8 @@ $ newplace
  TEST 2.3  createRequest(type, location, details)  -> POST /requests
  DO      $ call POST /requests '{"type":"water","details":"Family of 4 needs drinking water","priority":"high","auto_match":false,"location":'"$(loc 0)"'}'
          $ REQ=$(last_id); echo $REQ
- EXPECT  HTTP 201; id "req-<hex>", status "pending", history [pending], "_storage": shard 0/1/2, replicas = the 2
+ EXPECT  HTTP 201; id "req-<hex>", type, location, details, status "pending", created_at (creation time),
+         history [pending], "_storage": shard 0/1/2, replicas = the 2
          nodes of that shard, "degraded": false.
  WHY     A new request always starts "pending" (not yet helped). degraded false = BOTH replicas confirmed the write.
          (auto_match false only so that YOU can match it by hand in 2.5; normally it is matched automatically.)
@@ -182,6 +183,8 @@ $ newplace
  $ call PUT /resources/$RES/status '{}'                                                    -> 400 (nothing to update)
  $ call PUT /resources/$RES/status '{"availability":0,"status":"available"}'               -> 400 (0 units cannot
                                                                                   be "available")
+ $ call GET "/requests/%20%20$REQ%20"                                                       -> 200 (spaces around
+                                                                                  a pasted id are trimmed)
  WHY     422 = the input itself is invalid (checked before anything is stored); 404 = the id does not exist;
          409 = the input is valid but conflicts with the CURRENT STATE (finished request, no resource);
          400 = an empty or contradictory update. 503 (service unavailable) is shown in 5.4 and 9.5.
@@ -298,7 +301,14 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
          request is "unmatched" instead of retrying forever. The sweeper revives "unmatched" requests as soon as a
          suitable resource exists, so nobody is forgotten.
 
- TEST 5.7  RabbitMQ management UI
+ TEST 5.7  Matching worker statistics
+ DO      $ kubectl -n erms exec deploy/matching-service -- python -c "import urllib.request; print(urllib.request.urlopen('http://localhost:8000/stats').read().decode())"
+                                         # Compose: docker compose exec matching-service python -c "...same..."
+ EXPECT  {"worker": "<pod name>", "broker_connected": true, "counters": {...}} - the counters (messages consumed,
+         matched, retried, swept ...) grow as that pod processes work; {} right after the pod started.
+ WHY     Each worker reports what IT did, so you can see that the work is really shared between pods.
+
+ TEST 5.8  RabbitMQ management UI
  DO      Open http://localhost:30672 (Compose: http://localhost:15672). User: erms, password:
          $ ./scripts/rabbit-password.sh                      # Compose: COMPOSE=1 ./scripts/rabbit-password.sh
          Go to Queues -> matching.requests, then run TEST 5.2 again.
@@ -504,7 +514,9 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
          $ kubectl -n erms delete pod storage-shard-1-0
  EXPECT  Within ~10 s: storage-shard-1-0 turns RED on the "Storage nodes" timeline, "Ready replicas" of shard 1
          drops to 1, "Read failovers" rises; ~20 s later GREEN again and "Last resync duration" shows its resync.
+         Every panel shows data (no "No data" panel).
  WHY     The coordinator exports node state and failovers; the dashboard (refresh 5 s) turns them into colours.
+         Grafana starts with the Prometheus data source and this dashboard already provisioned (from files).
          Login (admin + ./scripts/grafana-password.sh) is only needed to EDIT dashboards.
 
 
@@ -515,8 +527,9 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
  TEST 12.1 The autoscaler exists and is healthy
  DO      $ kubectl -n erms get scaledobject,hpa
          $ kubectl -n keda get pods
+         $ kubectl -n erms get triggerauthentication
  EXPECT  ScaledObject matching-service: min 2, max 6, READY True. HPA keda-hpa-matching-service. KEDA pods
-         Running.
+         Running. TriggerAuthentication: KEDA's RabbitMQ login comes from Secret keda-rabbitmq (not from the YAML).
  WHY     KEDA reads the RabbitMQ queue length and feeds it to a Kubernetes HPA: desired pods = waiting messages / 5
          (between 2 and 6), re-checked every 15 s.
 
@@ -524,6 +537,7 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
  DO      $ ./scripts/keda-demo.sh                 (in a 2nd terminal: kubectl -n erms get pods -l app=matching-service -w)
  EXPECT  200 requests -> the queue fills -> matching pods 2 -> up to 6 within ~30 s -> the queue drains -> back
          to 2 about 30 s - 2 min later. Summary: all requests matched, none twice, capacity exact.
+         Grafana panel "Autoscaling: matching pods vs queue depth" shows the same rise and fall.
  WHY     More waiting work = more workers, automatically; when idle, extra pods are removed to free resources.
          Removed pods finish their in-flight messages first (graceful drain), so nothing is lost.
 
@@ -654,6 +668,13 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
  $ .venv/bin/python -m pytest -v tests/integration                EXPECT 19 passed   (Compose, after: unset API_URL
                                                                                        COORD_URL RABBIT_URL RABBIT_USER RABBIT_PASS)
  Run one test by name:  ./scripts/spec-test.sh k8s -k storage_node_failure
+
+ Guided demo scripts (they run the PDF §10 demonstrations for you, with before / during / after output):
+ $ ./scripts/k8s-demo.sh        Kubernetes: pod deletion + recovery, coordinator restart, scaling 2 -> 4 -> 2 with
+                                a live availability probe, storage pod failure. EXPECT every step "OK", exit code 0.
+ $ ./scripts/keda-demo.sh       KEDA: 200 requests, matching pods 2 -> 6 -> 2, summary: all matched, none twice.
+ $ ./scripts/demo.sh            Docker Compose only: steps 0-7 (creation, registration, matching, distribution,
+                                RabbitMQ, storage failure, recovery). AUTO=1 in front = no pauses.
  WHY     The spec suite has a test for every PDF requirement (104), both extensions and the UI (34); each test
          prints every check it made. Results of the last full runs: SPEC_TEST_REPORT.txt, EXTENSIONS_TEST_REPORT.txt.
 
@@ -665,7 +686,7 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
  Resource registration and availability updates            -> 2.1, 2.2, 2.8              UI 13.3
  Correct resource matching                                  -> 2.5, 2.6, 4.1 - 4.4
  Multiple simultaneous requests                             -> 5.2, 6.1
- RabbitMQ message delivery and processing                   -> 5.1 - 5.6                  UI 13.7
+ RabbitMQ message delivery and processing                   -> 5.1 - 5.8                  UI 13.7
  Correct shard selection and data distribution              -> 7.1, 7.2                   UI 13.6
  Replica availability during storage-node failure           -> 9.2, 9.3, 9.5              Grafana 11.3
  Recovery and data synchronization after node recovery      -> 9.4, 9.5, 9.6
@@ -676,3 +697,15 @@ $ call POST /resources '{"type":"water","name":"Async tanker","availability":100
  Extension #39 Prometheus + Grafana                         -> PART 11, UI 13.8
  Extension #18 KEDA                                         -> PART 12, UI 13.7
  Web UI                                                     -> PART 13
+ PDF §12 design choices (language, storage, sharding, ...)  -> README.md, section "Design decisions" 
+
+ PDF §10 REQUIRED DEMONSTRATION -> what to show
+ Request creation                                           -> 2.3, 5.1          (UI 13.4)
+ Resource registration                                      -> 2.1, 2.2          (UI 13.3)
+ Resource matching                                          -> 2.5, 4.1          (UI 13.4)
+ Data distribution across shards                            -> 7.1, 7.2          (UI 13.6)
+ Asynchronous processing through RabbitMQ                   -> 5.1, 5.2, 5.8     (UI 13.7)
+ Storage node failure                                       -> 9.2, 9.3, 9.5     (Grafana 11.3)
+ Node recovery and synchronization                          -> 9.4
+ Kubernetes pod recovery and service scaling                -> 10.3, 10.4, ./scripts/k8s-demo.sh
+ (extensions) autoscaling / monitoring                      -> 12.2 ./scripts/keda-demo.sh / 11.3
