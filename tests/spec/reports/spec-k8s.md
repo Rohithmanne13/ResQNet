@@ -1,6 +1,6 @@
 # ERMS - specification compliance report
 
-* **k8s** (API http://192.168.49.2:30080  coordinator http://192.168.49.2:30081  RabbitMQ http://192.168.49.2:30672  Grafana http://192.168.49.2:30030  namespace erms), 2026-11-20 02:24:29 -> 2026-11-20 02:34:41: 60 passed, 0 failed, 0 skipped
+* **k8s** (API http://192.168.49.2:30080  coordinator http://192.168.49.2:30081  RabbitMQ http://192.168.49.2:30672  Grafana http://192.168.49.2:30030  namespace erms), 2026-11-20 17:06:21 -> 2026-11-20 17:19:44: 72 passed, 0 failed
 
 ## Requirement matrix
 
@@ -207,11 +207,31 @@
 | **PASS** | X18.visible | The autoscaling is visible in Prometheus / Grafana (matching pods vs queue depth) | `test_x18_burst_scales_up_then_back_down` [k8s] |
 | **PASS** | X18.manual | Manual scaling / stopping still works with KEDA (pin the replica count), then automatic scaling resumes | `test_x18_manual_pin_then_automatic_again` [k8s] |
 
+### EXTENSION - Web UI (frontend for every feature)
+
+| Verdict | Id | Requirement (PDF) | Verified by |
+|---|---|---|---|
+| **PASS** | UI.serve | The web UI runs as its own container / pod (Compose :8090, Kubernetes NodePort 30088) | `test_ui_is_served_on_this_deployment` [k8s] |
+| **PASS** | UI.proxy | The UI reaches the API, the coordinator (read-only) and Prometheus through its own origin; storage writes and Prometheus admin paths are blocked; it survives backend restarts | `test_ui_proxies_the_backend_with_the_right_restrictions` [k8s] |
+| **PASS** | UI.errors | Every tab loads without JavaScript errors or failed calls | `test_ui_every_tab_loads_without_errors` [k8s] |
+| **PASS** | UI.health | The header shows live health: API, RabbitMQ, shards, storage nodes, matching pods | `test_ui_every_tab_loads_without_errors` [k8s] |
+| **PASS** | UI.overview | Overview: requests / resources by status, storage nodes, queue depth, matching pods, latest requests - matching the backend's numbers | `test_ui_overview_matches_the_backend` [k8s] |
+| **PASS** | UI.resources | Resources: register (type, kind, location, availability), list + filters, detail, availability and status updates | `test_ui_register_and_update_a_resource` [k8s] |
+| **PASS** | UI.requests | Requests: create (type, location, details, priority, auto-match), list + filters, detail with assignment, storage location and history | `test_ui_request_lifecycle_and_match_now` [k8s] |
+| **PASS** | UI.match | Match now and every status change (in progress, resolved, re-open, cancel) from the UI; errors such as 'no suitable resource' are shown | `test_ui_request_lifecycle_and_match_now` [k8s] |
+| **PASS** | UI.async | A request created with automatic matching is matched through RabbitMQ and shown so | `test_ui_request_matched_automatically_through_rabbitmq` [k8s] |
+| **PASS** | UI.map | Map: requests by status, resources, assignment lines; click to create at a location | `test_ui_map` [k8s] |
+| **PASS** | UI.storage | Storage cluster: shards, nodes, status, records, failovers; shard lookup of any record | `test_ui_storage_cluster_and_shard_lookup` [k8s] |
+| **PASS** | UI.failure | A storage node failure shows live in the UI (node down, then ready again) | `test_ui_shows_a_storage_failure_live` [k8s] |
+| **PASS** | UI.messaging | Messaging & autoscaling: queue depth, consumers, matching pods, time to match, charts; burst generator | `test_ui_messaging_charts_and_burst` [k8s] |
+| **PASS** | UI.monitoring | Monitoring: the Grafana dashboard embedded and live, links to Prometheus / RabbitMQ / Swagger, scrape-target health | `test_ui_monitoring_tab` [k8s] |
+| **PASS** | UI.both | The UI works on both deployments (Docker Compose and Kubernetes) | `test_ui_is_served_on_this_deployment` [k8s] |
+
 ## Every check performed
 
 ### Target: k8s
 
-#### [PASS] `test_exactly_one_coordinator` (1.2s) - covers 2.coord, 4.b
+#### [PASS] `test_exactly_one_coordinator` (0.5s) - covers 2.coord, 4.b
 
 §2 Table 1 'Coordinator: 1' / §4 'one coordinator': exactly one coordinator runs, every storage node is registered with it and every service sends its storage operations to it.
 
@@ -223,18 +243,18 @@
 - ✔ matching-service sends every storage operation to the coordinator — `COORDINATOR_URL=http://coordinator:8000`
 - ✔ storage nodes register / heartbeat with the coordinator — `COORDINATOR_URL=http://coordinator:8000`
 
-#### [PASS] `test_two_to_three_microservices` (1.4s) - covers 2.ms
+#### [PASS] `test_two_to_three_microservices` (1.1s) - covers 2.ms
 
 §2 Table 1 'Microservices: 2-3': the application is split into separately deployed microservices.
 
 - ✔ microservice 'request-service' is deployed on its own (client REST API; stores requests; publishes them to RabbitMQ) — `2 instance(s)`
 - ✔ microservice 'matching-service' is deployed on its own (consumes RabbitMQ messages; finds and assigns resources) — `2 instance(s)`
 - ✔ microservice 'coordinator' is deployed on its own (storage-layer service: shard routing, replication, failure detection) — `1 instance(s)`
-- ✔ request-service is healthy — `{'status': 'ok', 'instance': 'request-service-b5547c6c6-7qc8k', 'broker_connected': True}`
-- ✔ matching-service is healthy (called from inside the request-service container) — `{"status":"ok","worker":"matching-service-65f774d4c6-zqmwt","broker_connected":true}`
+- ✔ request-service is healthy — `{'status': 'ok', 'instance': 'request-service-59b67b7445-99xwp', 'broker_connected': True}`
+- ✔ matching-service is healthy (called from inside the request-service container) — `{"status":"ok","worker":"matching-service-54879d4d65-4cc2b","broker_connected":true}`
 - ✔ 2-3 microservices: 2 application services + the coordinator = 3 — `request-service, matching-service, coordinator; storage nodes are the shards, RabbitMQ the broker`
 
-#### [PASS] `test_one_rabbitmq_instance` (1.4s) - covers 2.mq, 6.mq
+#### [PASS] `test_one_rabbitmq_instance` (0.7s) - covers 2.mq, 6.mq
 
 §2 Table 1 'Message broker: 1 RabbitMQ instance', used by the request and matching services.
 
@@ -246,7 +266,7 @@
 - ✔ matching-service is configured to use that broker — `RABBITMQ_URL host = rabbitmq:5672`
 - ✔ every request-service and matching-service instance is connected to it — `5 AMQP connections (expected >= 4)`
 
-#### [PASS] `test_three_shards_each_with_a_replica` (0.8s) - covers 2.shards, 2.repl, 4.b
+#### [PASS] `test_three_shards_each_with_a_replica` (0.3s) - covers 2.shards, 2.repl, 4.b
 
 §2 'Storage shards: 3', 'Replication: at least 1 replica per shard' / §4 'three storage shards, and at least one replica for each shard'.
 
@@ -260,9 +280,9 @@
 - ✔ StatefulSet storage-shard-0 runs 2 ready pods — `replicas=2 ready=2`
 - ✔ StatefulSet storage-shard-1 runs 2 ready pods — `replicas=2 ready=2`
 - ✔ StatefulSet storage-shard-2 runs 2 ready pods — `replicas=2 ready=2`
-- ✔ the replicas of each shard hold the same number of records — `key counts per shard: {'0': [1760, 1760], '1': [1788, 1788], '2': [1816, 1816]}`
+- ✔ the replicas of each shard hold the same number of records — `key counts per shard: {'0': [3793, 3793], '1': [3931, 3931], '2': [3863, 3863]}`
 
-#### [PASS] `test_one_or_more_clients` (0.3s) - covers 2.clients
+#### [PASS] `test_one_or_more_clients` (0.4s) - covers 2.clients
 
 §2 Table 1 'Clients: 1 or more': the API is usable by any HTTP/JSON client and by several at the same time.
 
@@ -276,32 +296,32 @@
 - ✔ POST /match/{request_id} is published in the machine-readable API description — `openapi.json`
 - ✔ 5 independent clients working at the same time are all served (create 201, read 200) — `[(201, 200), (201, 200), (201, 200), (201, 200), (201, 200)]`
 
-#### [PASS] `test_createRequest` (0.0s) - covers 1.op1, 5.1, 7.1, 10.create, 11.a
+#### [PASS] `test_createRequest` (0.1s) - covers 1.op1, 5.1, 7.1, 10.create, 11.a
 
 §1 createRequest(type, location, details) - 'Create an emergency request' = POST /requests (201).
 
 - ✔ POST /requests with exactly {type, location, details} -> 201 Created — `201`
 - ✔ the response is JSON — `application/json`
-- ✔ the new request got an id — `req-e5a4529bfb52`
+- ✔ the new request got an id — `req-d6f08af5311d`
 - ✔ 'type' is stored as submitted — `water`
-- ✔ 'location' is stored as submitted — `{'lat': -39.929483, 'lon': 167.641895, 'area': 'spec-19383e'}`
+- ✔ 'location' is stored as submitted — `{'lat': -51.251009, 'lon': 153.873152, 'area': 'spec-199ac4'}`
 - ✔ 'details' is stored as submitted — `two people stranded on a roof, need drinking water`
 - ✔ a new request starts in status 'pending' — `pending`
 - ✔ it was handed to RabbitMQ for asynchronous matching — `queued=True`
-- ✔ it was written to its shard on both copies — `{'shard': 2, 'replicas': ['storage-shard-2-0', 'storage-shard-2-1'], 'version': 1795121680776354330, 'degraded': False}`
+- ✔ it was written to its shard on both copies — `{'shard': 2, 'replicas': ['storage-shard-2-0', 'storage-shard-2-1'], 'version': 1795174589361497864, 'degraded': False}`
 
 #### [PASS] `test_getRequest` (0.1s) - covers 1.op5, 5.2, 10.create, 11.a
 
 §1 getRequest(requestId) - 'Retrieve request information' = GET /requests/{id} (200).
 
 - ✔ GET /requests/{id} -> 200 OK — `200`
-- ✔ returned 'id' equals what was created — `req-3948d9c6b34a`
+- ✔ returned 'id' equals what was created — `req-b1791e26e630`
 - ✔ returned 'type' equals what was created — `food`
-- ✔ returned 'location' equals what was created — `{'lat': -39.929483, 'lon': 172.141895, 'area': 'spec-19383e'}`
+- ✔ returned 'location' equals what was created — `{'lat': -51.251009, 'lon': 162.873152, 'area': 'spec-199ac4'}`
 - ✔ returned 'details' equals what was created — `food for 12 people in a flooded school`
 - ✔ returned 'status' equals what was created — `pending`
-- ✔ returned 'created_at' equals what was created — `2026-11-19T20:54:40.828+00:00`
-- ✔ the read was served by a copy of the request's own shard — `shard 2, served_by storage-shard-2-0`
+- ✔ returned 'created_at' equals what was created — `2026-11-20T11:36:29.400+00:00`
+- ✔ the read was served by a copy of the request's own shard — `shard 0, served_by storage-shard-0-0`
 - ✔ reading again returns the same data
 
 #### [PASS] `test_registerResource` (0.1s) - covers 1.op2, 5.4, 10.register, 11.b
@@ -309,13 +329,13 @@
 §1 registerResource(type, location, availability) - 'Register a resource or volunteer' = POST /resources.
 
 - ✔ POST /resources with exactly {type, location, availability} -> 201 Created — `201`
-- ✔ the resource got an id — `res-water-d986474661ea`
+- ✔ the resource got an id — `res-water-500b127ff102`
 - ✔ 'type' is stored as submitted — `water`
-- ✔ 'location' is stored as submitted — `{'lat': -39.9205, 'lon': 176.641895, 'area': 'spec-19383e'}`
+- ✔ 'location' is stored as submitted — `{'lat': -54.242025, 'lon': -62.126848, 'area': 'spec-199ac4'}`
 - ✔ 'availability' is stored as submitted — `5`
 - ✔ a resource with capacity starts 'available' — `available`
-- ✔ a volunteer can be registered too (kind=volunteer) -> 201 — `res-transportation-b64db24c86f6`
-- ✔ the registered resource appears in GET /resources — `179 water resources`
+- ✔ a volunteer can be registered too (kind=volunteer) -> 201 — `res-transportation-e9fc982c57ef`
+- ✔ the registered resource appears in GET /resources — `457 water resources`
 - ✔ and can be read back by id — `200`
 
 #### [PASS] `test_matchRequest` (0.2s) - covers 1.op3, 5.7, 10.match, 11.c, 7.5, 7.6
@@ -323,11 +343,11 @@
 §1 matchRequest(requestId) - 'Find and assign a suitable available resource' = POST /match/{requestId}.
 
 - ✔ POST /match/{requestId} -> 200 OK — `200`
-- ✔ a resource was found and assigned — `Water tanker (res-water-a112211acdf7) at 1.998 km`
+- ✔ a resource was found and assigned — `Water tanker (res-water-916ed9858d38) at 1.998 km`
 - ✔ the distance is computed from the two locations — `1.998`
-- ✔ the request is now 'matched' to that resource — `{'resource_id': 'res-water-a112211acdf7', 'resource_name': 'Water tanker', 'kind': 'resource', 'distance_km': 1.998, 'matched_at': '2026-11-19T20:54:41.069+00:00', 'matched_by': 'matching-service-65f774d4c6-zqmwt', 'via': 'api'}`
-- ✔ one unit of the resource is assigned to the request — `availability 3 -> 2, assigned_requests=['req-450ac7678502']`
-- ✔ matching an already-matched request again does not take a second unit — `{'result': 'skipped', 'request_id': 'req-450ac7678502', 'status': 'matched', 'assigned_resource': 'res-water-a112211acdf7'}`
+- ✔ the request is now 'matched' to that resource — `{'resource_id': 'res-water-916ed9858d38', 'resource_name': 'Water tanker', 'kind': 'resource', 'distance_km': 1.998, 'matched_at': '2026-11-20T11:36:29.652+00:00', 'matched_by': 'matching-service-54879d4d65-85ctp', 'via': 'api'}`
+- ✔ one unit of the resource is assigned to the request — `availability 3 -> 2, assigned_requests=['req-e1cffcd79b33']`
+- ✔ matching an already-matched request again does not take a second unit — `{'result': 'skipped', 'request_id': 'req-e1cffcd79b33', 'status': 'matched', 'assigned_resource': 'res-water-916ed9858d38'}`
 
 #### [PASS] `test_updateStatus` (0.2s) - covers 1.op4, 5.3, 11.a
 
@@ -339,63 +359,63 @@
 - ✔ the stored status is now 'resolved' — `previous_status=in_progress`
 - ✔ resolving the request released the resource's capacity — `availability back to 1, status available`
 - ✔ every status change is recorded in the request history — `['pending', 'matched', 'in_progress', 'resolved']`
-- ✔ updated_at moves forward — `2026-11-19T20:54:41.196+00:00 -> 2026-11-19T20:54:41.296+00:00`
+- ✔ updated_at moves forward — `2026-11-20T11:36:29.769+00:00 -> 2026-11-20T11:36:29.881+00:00`
 - ✔ a pending request can be cancelled -> 200 — `200`
 
-#### [PASS] `test_supported_request_types` (0.7s) - covers 1.b, 3.1.types, 1.c
+#### [PASS] `test_supported_request_types` (1.0s) - covers 1.b, 3.1.types, 1.c
 
 §1 'requests such as food, water, medicine, transportation, or shelter' / §3.1 example request types.
 
-- ✔ a 'water' request is accepted (201) — `req-a2d7b5a0dc77`
+- ✔ a 'water' request is accepted (201) — `req-46979fe3f2f7`
 - ✔ the 'water' request is matched to the 'water' resource — `matched -> water provider`
-- ✔ a 'food' request is accepted (201) — `req-204f76d2fc96`
+- ✔ a 'food' request is accepted (201) — `req-dae961b97838`
 - ✔ the 'food' request is matched to the 'food' resource — `matched -> food provider`
-- ✔ a 'medicine' request is accepted (201) — `req-716420cfa389`
+- ✔ a 'medicine' request is accepted (201) — `req-fb629dc50c05`
 - ✔ the 'medicine' request is matched to the 'medicine' resource — `matched -> medicine provider`
-- ✔ a 'transportation' request is accepted (201) — `req-0a5acafd52bd`
+- ✔ a 'transportation' request is accepted (201) — `req-70660281d5aa`
 - ✔ the 'transportation' request is matched to the 'transportation' resource — `matched -> transportation provider`
-- ✔ a 'shelter' request is accepted (201) — `req-6bb617a8122d`
+- ✔ a 'shelter' request is accepted (201) — `req-995fa784cf06`
 - ✔ the 'shelter' request is matched to the 'shelter' resource — `matched -> shelter provider`
 - ✔ an unknown request type is rejected (422) — `Value error, type must be one of ['food', 'medicine', 'other', 'rescue', 'shelter', 'trans`
 
-#### [PASS] `test_request_record_fields` (0.8s) - covers 3.1.id, 3.1.type, 3.1.loc, 3.1.details, 3.1.status, 3.1.created, 11.a
+#### [PASS] `test_request_record_fields` (1.3s) - covers 3.1.id, 3.1.type, 3.1.loc, 3.1.details, 3.1.status, 3.1.created, 11.a
 
 §3.1 'Each request should contain, at minimum: unique request ID, request type, location, request details, current status, creation time'.
 
-- ✔ unique request ID: present — `req-84c751574aab`
+- ✔ unique request ID: present — `req-ebe7e72bf5cb`
 - ✔ unique request ID: 25 requests created at the same time all got different ids — `25 distinct of 25`
 - ✔ request type — `medicine`
-- ✔ location (latitude / longitude) — `{'lat': -39.929483, 'lon': -165.358105, 'area': 'spec-19383e'}`
+- ✔ location (latitude / longitude) — `{'lat': -54.251009, 'lon': -26.126848, 'area': 'spec-199ac4'}`
 - ✔ request details — `insulin for a diabetic patient`
 - ✔ current status — `pending`
-- ✔ creation time (ISO-8601 timestamp with time zone, taken when the request was created) — `2026-11-19T20:54:42.101+00:00`
+- ✔ creation time (ISO-8601 timestamp with time zone, taken when the request was created) — `2026-11-20T11:36:30.981+00:00`
 
 #### [PASS] `test_resource_record_fields_and_kinds` (0.5s) - covers 3.2.id, 3.2.type, 3.2.loc, 3.2.avail, 3.2.status, 3.2.kinds, 11.b
 
 §3.2 'Each resource should contain, at minimum: unique resource ID, resource type, location, availability, current status' and 'may represent a physical resource, volunteer, NGO, or other available source'.
 
-- ✔ unique resource ID: present — `res-shelter-ab3b728f6d43`
+- ✔ unique resource ID: present — `res-shelter-446aefd8e61c`
 - ✔ unique resource ID: 15 resources registered at the same time all got different ids — `15 distinct of 15`
 - ✔ resource type — `shelter`
-- ✔ location — `{'lat': -39.929483, 'lon': -160.858105, 'area': 'spec-19383e'}`
+- ✔ location — `{'lat': -54.251009, 'lon': -21.626848, 'area': 'spec-199ac4'}`
 - ✔ availability (units of capacity) — `40`
 - ✔ current status — `available`
-- ✔ a resource of kind 'resource' can be registered — `res-food-9942fe0a5443`
-- ✔ a resource of kind 'volunteer' can be registered — `res-food-ee5d970e1a16`
-- ✔ a resource of kind 'ngo' can be registered — `res-food-3bf06fd03157`
-- ✔ a resource of kind 'other' can be registered — `res-food-50d3cd0c3bc0`
+- ✔ a resource of kind 'resource' can be registered — `res-food-7d9900c7223a`
+- ✔ a resource of kind 'volunteer' can be registered — `res-food-196a283ee42b`
+- ✔ a resource of kind 'ngo' can be registered — `res-food-55e8a69cb913`
+- ✔ a resource of kind 'other' can be registered — `res-food-4114b90ae253`
 - ✔ an unknown kind is rejected (422) — `422`
 
-#### [PASS] `test_system_maintains_requests_and_resources` (1.4s) - covers 3.maintain, 5.5
+#### [PASS] `test_system_maintains_requests_and_resources` (2.4s) - covers 3.maintain, 5.5
 
 §3 'The system should maintain information about emergency requests and available resources' and §5 GET /resources 'List resources' (200).
 
-- ✔ GET /resources -> 200 OK with a JSON list — `539 resources across all shards`
-- ✔ the list contains the resources just registered (from whichever shard holds them) — `res-water-a54531a5fdd2 (shard 2), res-food-885d661a95cf (shard 2)`
-- ✔ GET /resources?type=water lists only water resources — `183 items`
-- ✔ GET /resources?status=available lists only available ones — `34 items`
+- ✔ GET /resources -> 200 OK with a JSON list — `1272 resources across all shards`
+- ✔ the list contains the resources just registered (from whichever shard holds them) — `res-water-e767738a5116 (shard 1), res-food-bdb8c7c8a31a (shard 0)`
+- ✔ GET /resources?type=water lists only water resources — `461 items`
+- ✔ GET /resources?status=available lists only available ones — `56 items`
 - ✔ no shard was missing from the list — `[]`
-- ✔ requests are kept as well (GET /requests) — `3333 water requests`
+- ✔ requests are kept as well (GET /requests) — `7539 water requests`
 
 #### [PASS] `test_resource_availability_updates` (0.3s) - covers 5.6, 11.b, 3.2.avail, 3.2.status
 
@@ -409,26 +429,26 @@
 - ✔ availability 0 -> status becomes 'busy' automatically — `busy`
 - ✔ availability 2 -> 'available' again — `available`
 
-#### [PASS] `test_flood_victim_needs_drinking_water_end_to_end` (2.2s) - covers 1.1.a, 1.1.b, 1.a, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 6.mq, 11.e, 11.cond, 10.match
+#### [PASS] `test_flood_victim_needs_drinking_water_end_to_end` (2.9s) - covers 1.1.a, 1.1.b, 1.a, 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 6.mq, 11.e, 11.cond, 10.match
 
 §1.1 example scenario and §7 steps 1-6: 'a user affected by flooding requires drinking water. The request is submitted, processed asynchronously, matched with an available resource, and the request status is updated.' User -> Request Service -> RabbitMQ -> Matching Service -> Distributed Storage -> Resource Assigned.
 
 - ✔ 1. the client submits the request: POST /requests -> 201 — `201`
-- ✔    the API answers at once, before any matching happened (asynchronous): status 'pending' — `answered in 17 ms`
-- ✔ 2. the Request Service stored the request in the distributed storage — `shard 1, read from storage-shard-1-0`
-- ✔    the record is physically on both copies of its shard — `{'storage-shard-1-0': 200, 'storage-shard-1-1': 200}`
+- ✔    the API answers at once, before any matching happened (asynchronous): status 'pending' — `answered in 16 ms`
+- ✔ 2. the Request Service stored the request in the distributed storage — `shard 0, read from storage-shard-0-0`
+- ✔    the record is physically on both copies of its shard — `{'storage-shard-0-0': 200, 'storage-shard-0-1': 200}`
 - ✔ 3. the request was published to RabbitMQ (queued: true) — `True`
-- ✔    RabbitMQ received it into queue 'matching.requests' — `publish counter 1330 -> 1331`
+- ✔    RabbitMQ received it into queue 'matching.requests' — `publish counter 1 -> 2`
 - ✔ 4. the Matching Service consumed the message (matched by the queue consumer, not the sync API) — `via=queue`
-- ✔    ... in one of the matching-service instances — `matching-service-65f774d4c6-fxrwc (running now: ['matching-service-65f774d4c6-fxrwc', 'matching-service-65f774d4c6-zqmwt'])`
-- ✔    the message was acknowledged to RabbitMQ after processing — `ack counter 4881 -> 4882`
+- ✔    ... in one of the matching-service instances — `matching-service-54879d4d65-4cc2b (running now: ['matching-service-54879d4d65-4cc2b', 'matching-service-54879d4d65-85ctp'])`
+- ✔    the message was acknowledged to RabbitMQ after processing — `ack counter 1 -> 2`
 - ✔ 5. a suitable available resource was identified: same type, available, the nearest one — `NGO water tanker at 2.997 km (the other water resource is 20 km away)`
 - ✔ 6. the request status was updated to 'matched' — `matched`
 - ✔    the resource was assigned: capacity 2 -> 1, request in its assigned list — `availability 1`
-- ✔    the assignment is persisted in the distributed storage — `2026-11-19T20:54:46.825+00:00`
+- ✔    the assignment is persisted in the distributed storage — `2026-11-20T11:36:37.092+00:00`
 - ✔ help delivered: status -> in_progress -> resolved, tanker capacity released (1 -> 2) — `2`
 - ✔ the request history shows the whole lifecycle — `['pending', 'matched', 'in_progress', 'resolved']`
-- · the path the request took — `User -> request-service (request-service-b5547c6c6-7qc8k) -> RabbitMQ (erms.requests -> matching.requests) -> matching-service (matching-service-65f774d4c6-fxrwc) -> storage shard 1 ['storage-shard-1-0', 'storage-shard-1-1'] -> resource assigned (NGO water tanker)`
+- · the path the request took — `User -> request-service (request-service-59b67b7445-99xwp) -> RabbitMQ (erms.requests -> matching.requests) -> matching-service (matching-service-54879d4d65-4cc2b) -> storage shard 0 ['storage-shard-0-0', 'storage-shard-0-1'] -> resource assigned (NGO water tanker)`
 
 #### [PASS] `test_matching_considers_resource_type` (0.2s) - covers 7.type, 1.c, 11.c
 
@@ -438,12 +458,12 @@
 - ✔ the food resource was not touched
 - ✔ a shelter request with only food/medicine nearby gets no match (409) — `no suitable available resource`
 
-#### [PASS] `test_matching_considers_location` (1.6s) - covers 7.loc, 1.c, 11.c
+#### [PASS] `test_matching_considers_location` (0.6s) - covers 7.loc, 1.c, 11.c
 
 §7 'The matching mechanism should consider at least resource type and location'.
 
 - ✔ closest first: 3 requests at the same place get the 5 km, then 15 km, then 25 km resource — `['5 km (4.994 km)', '15 km (14.983 km)', '25 km (24.972 km)']`
-- ✔ a resource beyond the matching radius (50 km) is not assigned: 80 km -> 409 — `{'message': 'no suitable available resource', 'result': 'no_match', 'request_id': 'req-9c04c749b7c7', 'candidates': 0, 'unavailable_shards': []}`
+- ✔ a resource beyond the matching radius (50 km) is not assigned: 80 km -> 409 — `{'message': 'no suitable available resource', 'result': 'no_match', 'request_id': 'req-2132285d5251', 'candidates': 0, 'unavailable_shards': []}`
 - ✔ a resource within 50 km is assigned: 40 km -> 200 — `39.955 km`
 
 #### [PASS] `test_matching_uses_only_available_resources` (0.3s) - covers 7.5, 11.c
@@ -459,27 +479,27 @@
 
 §10 'Asynchronous Processing: submit multiple requests and demonstrate processing through RabbitMQ' and §11 'RabbitMQ message delivery and processing'.
 
-- ✔ 15 requests submitted at the same time are all accepted (201) and queued — `in 0.11s`
+- ✔ 15 requests submitted at the same time are all accepted (201) and queued — `in 0.10s`
 - ✔ RabbitMQ buffered the burst while the matching workers processed it — `peak backlog in matching.requests: 15 messages`
-- ✔ all 15 requests were matched — `8.2s after submission`
+- ✔ all 15 requests were matched — `5.0s after submission`
 - ✔ every one of them came through the RabbitMQ consumer
-- ✔ the work was shared by the matching-service instances (competing consumers) — `{'matching-service-65f774d4c6-zqmwt': 8, 'matching-service-65f774d4c6-fxrwc': 7}`
-- ✔ RabbitMQ counted >= 15 messages published and acknowledged — `publish +15, ack +16`
+- ✔ the work was shared by the matching-service instances (competing consumers) — `{'matching-service-54879d4d65-85ctp': 7, 'matching-service-54879d4d65-4cc2b': 8}`
+- ✔ RabbitMQ counted >= 15 messages published and acknowledged — `publish +15, ack +15`
 - ✔ exactly 15 units were assigned, one per request, none twice — `availability 15 -> 0, status busy`
 
-#### [PASS] `test_simultaneous_requests_never_double_assign` (5.1s) - covers 11.d, 11.c
+#### [PASS] `test_simultaneous_requests_never_double_assign` (4.2s) - covers 11.d, 11.c
 
 §11 'Multiple simultaneous requests': many requests created and matched at the same moment never over-assign a resource, and racing matches of the same request take only one unit.
 
-- ✔ 30 simultaneous creations: all 201 with distinct ids — `spread over shards {0: 10, 2: 10, 1: 10}`
-- ✔ 30 simultaneous POST /match against 20 units: exactly 20 succeed (200), 10 get 409 — `{200: 20, 409: 10}`
+- ✔ 30 simultaneous creations: all 201 with distinct ids — `spread over shards {2: 9, 1: 13, 0: 8}`
+- ✔ 30 simultaneous POST /match against 20 units: exactly 20 succeed (200), 10 get 409 — `{409: 10, 200: 20}`
 - ✔ the resource is never over-assigned: availability exactly 0, 'busy' — `availability 0, busy`
 - ✔ its assigned list is exactly the matched requests (no duplicates, no strays) — `20`
 - ✔ 8 simultaneous POST /match of the SAME request all answer 200 — `Counter({'skipped': 7, 'matched': 1})`
-- ✔ ... and it holds exactly one unit (5 -> 4), listed once — `['req-077a9011b07e']`
+- ✔ ... and it holds exactly one unit (5 -> 4), listed once — `['req-d2ca32875635']`
 - ✔ the request is matched to that resource — `matched`
 
-#### [PASS] `test_rabbitmq_topology` (0.4s) - covers 6.mq, 11.e
+#### [PASS] `test_rabbitmq_topology` (0.2s) - covers 6.mq, 11.e
 
 §6 'RabbitMQ should be used for asynchronous communication between the request-processing and matching components' - exchange, queue, binding, consumers and retry path.
 
@@ -490,45 +510,45 @@
 - ✔ unmatched requests are retried later via 'matching.retry' (TTL, dead-lettered back to erms.requests) — `ttl=5000 ms`
 - ✔ request-service is connected to the broker
 
-#### [PASS] `test_data_distributed_across_three_shards_and_nodes` (5.0s) - covers 4.a, 10.dist, 11.f, 1.d
+#### [PASS] `test_data_distributed_across_three_shards_and_nodes` (5.3s) - covers 4.a, 10.dist, 11.f, 1.d
 
 §4 'Requests and resources must be stored across multiple storage nodes' / §10 'Data Distribution: demonstrate distribution across the three storage shards' - checked on each node's own disk.
 
-- ✔ requests are spread over all 3 shards — `9 requests: {0: 3, 1: 3, 2: 3}`
-- ✔ resources are spread over all 3 shards — `6 resources: {0: 2, 1: 2, 2: 2}`
-- ✔ every shard holds data — `records per node: {'0': [1811, 1810], '1': [1843, 1840], '2': [1861, 1859]}`
-- ✔ request on shard 0 is on the disk of exactly its shard's 2 nodes — `request:req-5151746b3f18 -> ['storage-shard-0-0', 'storage-shard-0-1']`
-- ✔    both copies are identical (same version) — `{1795121704136746451}`
-- ✔ resource on shard 0 is on the disk of exactly its shard's 2 nodes — `resource:medicine:res-medicine-352c4473e6ae -> ['storage-shard-0-0', 'storage-shard-0-1']`
-- ✔    both copies are identical (same version) — `{1795121704266416301}`
-- ✔ request on shard 1 is on the disk of exactly its shard's 2 nodes — `request:req-01854e4b1c78 -> ['storage-shard-1-0', 'storage-shard-1-1']`
-- ✔    both copies are identical (same version) — `{1795121704151373478}`
-- ✔ resource on shard 1 is on the disk of exactly its shard's 2 nodes — `resource:water:res-water-fe0436f51bb6 -> ['storage-shard-1-0', 'storage-shard-1-1']`
-- ✔    both copies are identical (same version) — `{1795121704238814743}`
-- ✔ request on shard 2 is on the disk of exactly its shard's 2 nodes — `request:req-68daaa8eadfb -> ['storage-shard-2-0', 'storage-shard-2-1']`
-- ✔    both copies are identical (same version) — `{1795121704109701527}`
-- ✔ resource on shard 2 is on the disk of exactly its shard's 2 nodes — `resource:food:res-food-292b4218e00d -> ['storage-shard-2-0', 'storage-shard-2-1']`
-- ✔    both copies are identical (same version) — `{1795121704252022097}`
+- ✔ requests are spread over all 3 shards — `10 requests: {0: 3, 1: 3, 2: 4}`
+- ✔ resources are spread over all 3 shards — `10 resources: {0: 2, 1: 3, 2: 5}`
+- ✔ every shard holds data — `records per node: {'0': [3843, 3843], '1': [3987, 3987], '2': [3902, 3902]}`
+- ✔ request on shard 0 is on the disk of exactly its shard's 2 nodes — `request:req-0426c6ac98f3 -> ['storage-shard-0-0', 'storage-shard-0-1']`
+- ✔    both copies are identical (same version) — `{1795174611632917409}`
+- ✔ resource on shard 0 is on the disk of exactly its shard's 2 nodes — `resource:transportation:res-transportation-1d5b69e86de0 -> ['storage-shard-0-0', 'storage-shard-0-1']`
+- ✔    both copies are identical (same version) — `{1795174611931556077}`
+- ✔ request on shard 1 is on the disk of exactly its shard's 2 nodes — `request:req-c89bbac9668c -> ['storage-shard-1-0', 'storage-shard-1-1']`
+- ✔    both copies are identical (same version) — `{1795174611535337020}`
+- ✔ resource on shard 1 is on the disk of exactly its shard's 2 nodes — `resource:food:res-food-1b855f1f6cd7 -> ['storage-shard-1-0', 'storage-shard-1-1']`
+- ✔    both copies are identical (same version) — `{1795174611901330692}`
+- ✔ request on shard 2 is on the disk of exactly its shard's 2 nodes — `request:req-6075455a98d9 -> ['storage-shard-2-0', 'storage-shard-2-1']`
+- ✔    both copies are identical (same version) — `{1795174611772083735}`
+- ✔ resource on shard 2 is on the disk of exactly its shard's 2 nodes — `resource:water:res-water-8f5a49c26b89 -> ['storage-shard-2-0', 'storage-shard-2-1']`
+- ✔    both copies are identical (same version) — `{1795174611886973135}`
 
-#### [PASS] `test_coordinator_selects_shard_by_hash_mod_3` (2.6s) - covers 4.c, 4.d, 11.f
+#### [PASS] `test_coordinator_selects_shard_by_hash_mod_3` (2.2s) - covers 4.c, 4.d, 11.f
 
 §4 'The coordinator determines the appropriate shard and routes storage operations. A simple hash-based partitioning mechanism may be used. For example: hash(request_id) mod 3'.
 
 - ✔ every record was stored on shard = sha256(key) mod 3 (recomputed by the test) — `45/45 correct`
-- · example: request:req-a2378e55ae19 — `sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']`
-- · example: request:req-df1f3935aa7a — `sha256 mod 3 = 2 -> stored on shard 2 by ['storage-shard-2-0', 'storage-shard-2-1']`
-- · example: resource:water:res-water-d21436bd3446 — `sha256 mod 3 = 0 -> stored on shard 0 by ['storage-shard-0-0', 'storage-shard-0-1']`
+- · example: request:req-085353309a72 — `sha256 mod 3 = 1 -> stored on shard 1 by ['storage-shard-1-0', 'storage-shard-1-1']`
+- · example: request:req-9199ddc92b42 — `sha256 mod 3 = 1 -> stored on shard 1 by ['storage-shard-1-0', 'storage-shard-1-1']`
+- · example: resource:water:res-water-31ed1b77cc59 — `sha256 mod 3 = 2 -> stored on shard 2 by ['storage-shard-2-0', 'storage-shard-2-1']`
 - ✔ the coordinator's own routing table agrees (GET /internal/shard-of/{key}) — `10/10 keys`
 - ✔ the shard choice is deterministic (same key -> same shard every time) — `5 keys asked twice`
 - ✔ reads are routed to a node of the key's shard — `15/15 reads routed correctly`
 - ✔ writes are routed to (all) the replicas of that shard — `45/45 writes acked by both copies`
-- · load spread of these 45 keys over the shards — `{0: 17, 1: 13, 2: 15}`
+- · load spread of these 45 keys over the shards — `{0: 11, 1: 16, 2: 18}`
 
-#### [PASS] `test_client_does_not_need_the_storage_location` (0.7s) - covers 4.e
+#### [PASS] `test_client_does_not_need_the_storage_location` (0.5s) - covers 4.e
 
 §4 'The client should not need to know the physical storage location of the requested data.'
 
-- ✔ no client endpoint takes a shard / node / replica parameter — `['request_id', 'resource_id', 'status', 'type']`
+- ✔ no client endpoint takes a shard / node / replica parameter — `['limit', 'order', 'request_id', 'resource_id', 'status', 'type']`
 - ✔ request bodies carry no storage location either — `['auto_match', 'availability', 'contact', 'details', 'kind', 'location', 'name', 'priority', 'requester', 'type']`
 - ✔ records on all 3 shards are read with the same URL, only the id is needed — `GET /requests/{id} for ids on shards [0, 1, 2] -> [200, 200, 200]`
 - ✔ the request-service knows only the coordinator, not any storage node — `COORDINATOR_URL=http://coordinator:8000`
@@ -595,28 +615,28 @@
 - ✔ POST /match/{unknown id} -> 404 — `got 404: request req-000000000000 not found`
 - ✔ GET /no-such-endpoint -> 404 — `got 404: Not Found`
 
-#### [PASS] `test_internal_node_register` (1.3s) - covers 6.reg
+#### [PASS] `test_internal_node_register` (1.8s) - covers 6.reg
 
 §6 POST /internal/nodes/register - 'Register storage node'.
 
 - ✔ a node for a non-existent shard is refused (400) and not added — `{'detail': 'shard_id must be in [0, 3)'}`
 - ✔ all storage nodes registered themselves on start-up — `[('storage-shard-0-0', 0), ('storage-shard-0-1', 0), ('storage-shard-1-0', 1), ('storage-shard-1-1', 1), ('storage-shard-2-0', 2), ('storage-shard-2-1', 2)]`
-- ✔ POST /internal/nodes/register with a node's own details -> 200 — `{'status': 'syncing', 'resync': True, 'peers': ['http://10.244.0.75:8000'], 'num_shards': 3}`
-- ✔ a (re)joining node is told to sync from the ready replica of its shard before serving reads — `status=syncing peers=['http://10.244.0.75:8000'] num_shards=3`
+- ✔ POST /internal/nodes/register with a node's own details -> 200 — `{'status': 'syncing', 'resync': True, 'peers': ['http://10.244.0.40:8000'], 'sync_id': 1795174620188678303, 'num_shards': 3}`
+- ✔ a (re)joining node is told to sync from the ready replica of its shard before serving reads — `status=syncing peers=['http://10.244.0.40:8000'] num_shards=3`
 - ✔ the real node reports itself ready again with its next heartbeat — `storage-shard-0-1`
-- · storage node log — `2026-11-19 20:35:44,212 [storage-storage-shard-0-1] INFO registered with coordinator (shard 0, url http://10.244.0.70:8000): waiting; peers=[]`
+- · storage node log — `2026-11-20 11:35:42,385 [storage-storage-shard-0-1] INFO registered with coordinator (shard 0, url http://10.244.0.32:8000): waiting; peers=[]`
 
-#### [PASS] `test_internal_heartbeats_are_periodic` (5.8s) - covers 6.hb, 8.hb
+#### [PASS] `test_internal_heartbeats_are_periodic` (5.7s) - covers 6.hb, 8.hb
 
 §6 POST /internal/nodes/heartbeat 'Report node availability' / §8 'Storage nodes should periodically report their availability to the coordinator using heartbeat messages.'
 
 - ✔ a heartbeat from an unknown node -> 404 (it must register first) — `unknown node; register first`
-- ✔ storage-shard-0-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.1s -> 1.4s, advanced 4.0s in 5s`
-- ✔ storage-shard-0-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.8s -> 2.1s, advanced 4.0s in 5s`
-- ✔ storage-shard-1-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.1s -> 1.4s, advanced 4.0s in 5s`
-- ✔ storage-shard-1-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.8s -> 2.1s, advanced 4.0s in 5s`
-- ✔ storage-shard-2-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.1s -> 1.4s, advanced 4.0s in 5s`
-- ✔ storage-shard-2-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.7s -> 2.1s, advanced 4.0s in 5s`
+- ✔ storage-shard-0-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.6s -> 1.6s, advanced 4.0s in 5s`
+- ✔ storage-shard-0-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.5s -> 1.5s, advanced 4.0s in 5s`
+- ✔ storage-shard-1-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.6s -> 1.6s, advanced 4.0s in 5s`
+- ✔ storage-shard-1-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.8s -> 1.8s, advanced 4.0s in 5s`
+- ✔ storage-shard-2-0 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.6s -> 1.6s, advanced 4.0s in 5s`
+- ✔ storage-shard-2-1 heartbeats periodically (last beat advanced, never older than the 6 s timeout) — `beat age 0.8s -> 1.8s, advanced 4.0s in 5s`
 - ✔ POST /internal/nodes/heartbeat from a registered node -> 200 — `{'resync': False}`
 - · configuration — `storage HEARTBEAT_INTERVAL=2 (default)s, coordinator HEARTBEAT_TIMEOUT=6s`
 
@@ -624,19 +644,19 @@
 
 §6 PUT / GET / DELETE /internal/data/{key} - 'Store or update data', 'Retrieve data', 'Delete data' (both at the coordinator and on the storage nodes it routes to).
 
-- ✔ PUT /internal/data/{key} -> 200, stored on the key's shard — `{'key': 'spec-test:19383e', 'version': 1795121717738006161, 'shard': 2, 'replicas': ['storage-shard-2-0', 'storage-shard-2-1'], 'degraded': False}`
-- ✔    and written to every replica of that shard — `['storage-shard-2-0', 'storage-shard-2-1']`
-- ✔ GET /internal/data/{key} -> 200 with the stored value — `version 1795121717738006161, served_by storage-shard-2-0`
-- ✔    the value is on the disk of both replicas with the same version — `['storage-shard-2-0', 'storage-shard-2-1']`
-- ✔ PUT again = update -> 200, new version — `1795121717738006161 -> 1795121718963930740`
-- ✔ an update based on an old version is refused (409, optimistic concurrency) — `{'detail': {'message': 'version conflict', 'current_version': 1795121718963930740}}`
+- ✔ PUT /internal/data/{key} -> 200, stored on the key's shard — `{'key': 'spec-test:199ac4', 'version': 1795174627716643330, 'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1'], 'degraded': False}`
+- ✔    and written to every replica of that shard — `['storage-shard-1-0', 'storage-shard-1-1']`
+- ✔ GET /internal/data/{key} -> 200 with the stored value — `version 1795174627716643330, served_by storage-shard-1-0`
+- ✔    the value is on the disk of both replicas with the same version — `['storage-shard-1-0', 'storage-shard-1-1']`
+- ✔ PUT again = update -> 200, new version — `1795174627716643330 -> 1795174628549065831`
+- ✔ an update based on an old version is refused (409, optimistic concurrency) — `{'detail': {'message': 'version conflict', 'current_version': 1795174628549065831}}`
 - ✔ prefix scan GET /internal/data?prefix= finds it — `[]`
-- ✔ DELETE /internal/data/{key} -> 200 — `{'key': 'spec-test:19383e', 'deleted': True, 'shard': 2, 'replicas': ['storage-shard-2-0', 'storage-shard-2-1']}`
+- ✔ DELETE /internal/data/{key} -> 200 — `{'key': 'spec-test:199ac4', 'deleted': True, 'shard': 1, 'replicas': ['storage-shard-1-0', 'storage-shard-1-1']}`
 - ✔    afterwards GET -> 404
-- ✔    and it is deleted on both replicas — `{'storage-shard-2-0': 404, 'storage-shard-2-1': 404}`
-- ✔ the storage node itself (storage-shard-2-0) serves PUT / GET / DELETE /internal/data/{key} for the coordinator — `PUT 200, GET 200, DELETE 200, GET after delete 404`
+- ✔    and it is deleted on both replicas — `{'storage-shard-1-0': 404, 'storage-shard-1-1': 404}`
+- ✔ the storage node itself (storage-shard-1-0) serves PUT / GET / DELETE /internal/data/{key} for the coordinator — `PUT 200, GET 200, DELETE 200, GET after delete 404`
 
-#### [PASS] `test_dockerfiles_for_every_service` (0.2s) - covers 9.1.a, 2.docker
+#### [PASS] `test_dockerfiles_for_every_service` (0.3s) - covers 9.1.a, 2.docker
 
 §9.1 'Create Dockerfiles for the required services.'
 
@@ -644,7 +664,9 @@
 - ✔ matching_service/Dockerfile exists and builds the matching-service service — `FROM python:3.12-slim ... CMD uvicorn matching_service.app:app`
 - ✔ coordinator/Dockerfile exists and builds the coordinator service — `FROM python:3.12-slim ... CMD uvicorn coordinator.app:app`
 - ✔ storage_node/Dockerfile exists and builds the storage-node service — `FROM python:3.12-slim ... CMD uvicorn storage_node.app:app`
+- ✔ frontend/Dockerfile exists and builds the web UI (nginx + the app) — `FROM nginx:1.30.5-alpine`
 - ✔ docker-compose builds 'coordinator' from its Dockerfile — `coordinator/Dockerfile`
+- ✔ docker-compose builds 'frontend' from its Dockerfile — `frontend/Dockerfile`
 - · grafana uses an official image (no Dockerfile needed) — `grafana/grafana:13.2.5`
 - ✔ docker-compose builds 'matching-service' from its Dockerfile — `matching_service/Dockerfile`
 - · prometheus uses an official image (no Dockerfile needed) — `prom/prometheus:v3.15.1`
@@ -661,50 +683,54 @@
 
 §9.1 'Build Docker images.'
 
-- ✔ image erms/request-service:latest is built — `created 2026-11-19T15:00:08, 165 MB, CMD uvicorn request_service.app:app`
-- ✔ image erms/matching-service:latest is built — `created 2026-11-19T15:00:08, 165 MB, CMD uvicorn matching_service.app:app`
-- ✔ image erms/coordinator:latest is built — `created 2026-11-19T17:06:17, 165 MB, CMD uvicorn coordinator.app:app`
-- ✔ image erms/storage-node:latest is built — `created 2026-11-19T15:00:07, 165 MB, CMD uvicorn storage_node.app:app`
+- ✔ image erms/request-service:latest is built — `created 2026-11-20T10:23:16, 165 MB, CMD uvicorn request_service.app:app`
+- ✔ image erms/matching-service:latest is built — `created 2026-11-20T10:23:17, 165 MB, CMD uvicorn matching_service.app:app`
+- ✔ image erms/coordinator:latest is built — `created 2026-11-20T10:23:13, 165 MB, CMD uvicorn coordinator.app:app`
+- ✔ image erms/storage-node:latest is built — `created 2026-11-20T10:23:14, 165 MB, CMD uvicorn storage_node.app:app`
+- ✔ image erms/frontend:latest is built — `created 2026-11-20T07:59:53`
 - ✔ erms/request-service:latest is loaded into the Kubernetes cluster — `minikube image ls`
 - ✔ erms/matching-service:latest is loaded into the Kubernetes cluster — `minikube image ls`
 - ✔ erms/coordinator:latest is loaded into the Kubernetes cluster — `minikube image ls`
 - ✔ erms/storage-node:latest is loaded into the Kubernetes cluster — `minikube image ls`
+- ✔ erms/frontend:latest is loaded into the Kubernetes cluster — `minikube image ls`
 
 #### [PASS] `test_components_run_as_containers` (0.3s) - covers 9.1.c, 2.docker, 1.d
 
 §9.1 'Run application components as containers.'
 
-- ✔ pod coordinator-698bbbccb9-n7b4r runs its container — `docker.io/erms/coordinator:latest, restarts 0`
-- ✔ pod grafana-5797ddf458-nxrrn runs its container — `docker.io/grafana/grafana:13.2.5, restarts 0`
-- ✔ pod matching-service-65f774d4c6-fxrwc runs its container — `docker.io/erms/matching-service:latest, restarts 0`
-- ✔ pod matching-service-65f774d4c6-zqmwt runs its container — `docker.io/erms/matching-service:latest, restarts 0`
-- ✔ pod prometheus-6955b6fccb-kdcz4 runs its container — `docker.io/prom/prometheus:v3.15.1, restarts 0`
-- ✔ pod rabbitmq-0 runs its container — `docker.io/library/rabbitmq:3.13-management, restarts 1`
-- ✔ pod request-service-b5547c6c6-7qc8k runs its container — `docker.io/erms/request-service:latest, restarts 0`
-- ✔ pod request-service-b5547c6c6-jrkvc runs its container — `docker.io/erms/request-service:latest, restarts 0`
+- ✔ pod coordinator-6769f6b9b8-m97bz runs its container — `docker.io/erms/coordinator:latest, restarts 0`
+- ✔ pod frontend-5b5db8cd9c-clwrr runs its container — `docker.io/erms/frontend:latest, restarts 0`
+- ✔ pod frontend-5b5db8cd9c-hcv9b runs its container — `docker.io/erms/frontend:latest, restarts 0`
+- ✔ pod grafana-7d954c755c-lmjrd runs its container — `docker.io/grafana/grafana:13.2.5, restarts 0`
+- ✔ pod matching-service-54879d4d65-4cc2b runs its container — `docker.io/erms/matching-service:latest, restarts 0`
+- ✔ pod matching-service-54879d4d65-85ctp runs its container — `docker.io/erms/matching-service:latest, restarts 0`
+- ✔ pod prometheus-86d99d48cb-cb4pf runs its container — `docker.io/prom/prometheus:v3.15.1, restarts 0`
+- ✔ pod rabbitmq-0 runs its container — `docker.io/library/rabbitmq:3.13-management, restarts 2`
+- ✔ pod request-service-59b67b7445-99xwp runs its container — `docker.io/erms/request-service:latest, restarts 0`
+- ✔ pod request-service-59b67b7445-bgddv runs its container — `docker.io/erms/request-service:latest, restarts 0`
 - ✔ pod storage-shard-0-0 runs its container — `docker.io/erms/storage-node:latest, restarts 0`
 - ✔ pod storage-shard-0-1 runs its container — `docker.io/erms/storage-node:latest, restarts 0`
 - ✔ pod storage-shard-1-0 runs its container — `docker.io/erms/storage-node:latest, restarts 0`
 - ✔ pod storage-shard-1-1 runs its container — `docker.io/erms/storage-node:latest, restarts 0`
 - ✔ pod storage-shard-2-0 runs its container — `docker.io/erms/storage-node:latest, restarts 0`
 - ✔ pod storage-shard-2-1 runs its container — `docker.io/erms/storage-node:latest, restarts 0`
-- ✔ every component runs in its pods (matching-service: 2+ pods, autoscaled by KEDA) — `{'coordinator': 1, 'grafana': 1, 'matching-service': 2, 'prometheus': 1, 'rabbitmq': 1, 'request-service': 2, 'storage-node': 6}`
+- ✔ every component runs in its pods (matching-service: 2+ pods, autoscaled by KEDA) — `{'coordinator': 1, 'frontend': 2, 'grafana': 1, 'matching-service': 2, 'prometheus': 1, 'rabbitmq': 1, 'request-service': 2, 'storage-node': 6}`
 
-#### [PASS] `test_containers_communicate` (9.9s) - covers 9.1.d, 9.2.d
+#### [PASS] `test_containers_communicate` (12.1s) - covers 9.1.d, 9.2.d
 
 §9.1 'Configure communication between containers' (service DNS names on the Docker network / Kubernetes Services): each component reaches the ones it depends on from inside its own container.
 
 - ✔ request-service -> coordinator (http://coordinator:8000/health) — `{"status":"ok","healthy_shards":[0,1,2],"nodes":6}`
-- ✔ request-service -> matching-service (http://matching-service:8000/health) — `{"status":"ok","worker":"matching-service-65f774d4c6-fxrwc","broker_connected":t`
+- ✔ request-service -> matching-service (http://matching-service:8000/health) — `{"status":"ok","worker":"matching-service-54879d4d65-85ctp","broker_connected":t`
 - ✔ matching-service -> coordinator (http://coordinator:8000/health) — `{"status":"ok","healthy_shards":[0,1,2],"nodes":6}`
 - ✔ request-service -> rabbitmq:5672 (AMQP) — `TCP connect`
 - ✔ matching-service -> rabbitmq:5672 (AMQP) — `TCP connect`
-- ✔ coordinator -> storage node storage-shard-0-0 (http://10.244.0.75:8000) — `ready`
-- ✔ coordinator -> storage node storage-shard-0-1 (http://10.244.0.70:8000) — `ready`
-- ✔ coordinator -> storage node storage-shard-1-0 (http://10.244.0.108:8000) — `ready`
-- ✔ coordinator -> storage node storage-shard-1-1 (http://10.244.0.107:8000) — `ready`
-- ✔ coordinator -> storage node storage-shard-2-0 (http://10.244.0.98:8000) — `ready`
-- ✔ coordinator -> storage node storage-shard-2-1 (http://10.244.0.99:8000) — `ready`
+- ✔ coordinator -> storage node storage-shard-0-0 (http://10.244.0.40:8000) — `ready`
+- ✔ coordinator -> storage node storage-shard-0-1 (http://10.244.0.32:8000) — `ready`
+- ✔ coordinator -> storage node storage-shard-1-0 (http://10.244.0.38:8000) — `ready`
+- ✔ coordinator -> storage node storage-shard-1-1 (http://10.244.0.33:8000) — `ready`
+- ✔ coordinator -> storage node storage-shard-2-0 (http://10.244.0.39:8000) — `ready`
+- ✔ coordinator -> storage node storage-shard-2-1 (http://10.244.0.34:8000) — `ready`
 - ✔ storage node storage-shard-1-0 -> coordinator (register / heartbeat path) — `{"status":"ok","healthy_shards":[0,1,2],"nodes":6}`
 - · how it is configured — `services address each other by name: COORDINATOR_URL=http://coordinator:8000, MATCHING_SERVICE_URL=http://matching-service:8000, RABBITMQ_URL=amqp://...@rabbitmq:5672, storage NODE_URL = pod IP`
 
@@ -723,7 +749,7 @@
 - ✔ README justifies: Kubernetes deployment configuration — `'## Kubernetes' section, manifest table`
 - ✔ README has the internal API description — `'## Internal API'`
 
-#### [PASS] `test_k8s_deployments` (1.4s) - covers 9.2.a, 2.k8s, 1.d
+#### [PASS] `test_k8s_deployments` (1.9s) - covers 9.2.a, 2.k8s, 1.d
 
 §9.2 'Kubernetes Deployments.'
 
@@ -735,7 +761,7 @@
 - ✔ StatefulSet 'storage-shard-1' (stateful: stable identity + persistent volume) is ready — `2/2 ready`
 - ✔ StatefulSet 'storage-shard-2' (stateful: stable identity + persistent volume) is ready — `2/2 ready`
 
-#### [PASS] `test_k8s_services` (2.1s) - covers 9.2.b
+#### [PASS] `test_k8s_services` (2.7s) - covers 9.2.b
 
 §9.2 'Kubernetes Services.'
 
@@ -757,25 +783,25 @@
 - ✔    'storage-shard-2' routes to running pods — `2 endpoint(s)`
 - ✔ clients reach the API through the request-service Service (NodePort 30080) — `http://192.168.49.2:30080`
 
-#### [PASS] `test_k8s_pod_replicas` (2.7s) - covers 9.2.c
+#### [PASS] `test_k8s_pod_replicas` (3.4s) - covers 9.2.c
 
 §9.2 'Pod replicas.' Several identical pods per microservice, load-balanced by their Service.
 
-- ✔ request-service runs >= 2 replica pods from one ReplicaSet — `['request-service-b5547c6c6-7qc8k', 'request-service-b5547c6c6-jrkvc'] <- {'request-service-b5547c6c6'}`
-- ✔ matching-service runs >= 2 replica pods from one ReplicaSet — `['matching-service-65f774d4c6-fxrwc', 'matching-service-65f774d4c6-zqmwt'] <- {'matching-service-65f774d4c6'}`
+- ✔ request-service runs >= 2 replica pods from one ReplicaSet — `['request-service-59b67b7445-99xwp', 'request-service-59b67b7445-bgddv'] <- {'request-service-59b67b7445'}`
+- ✔ matching-service runs >= 2 replica pods from one ReplicaSet — `['matching-service-54879d4d65-4cc2b', 'matching-service-54879d4d65-85ctp'] <- {'matching-service-54879d4d65'}`
 - ✔ storage-shard-0 runs 2 pods (primary + replica) — `['storage-shard-0-0', 'storage-shard-0-1']`
 - ✔ storage-shard-1 runs 2 pods (primary + replica) — `['storage-shard-1-0', 'storage-shard-1-1']`
 - ✔ storage-shard-2 runs 2 pods (primary + replica) — `['storage-shard-2-0', 'storage-shard-2-1']`
-- ✔ the request-service Service spreads calls over its replica pods — `{'request-service-b5547c6c6-jrkvc': 18, 'request-service-b5547c6c6-7qc8k': 22}`
+- ✔ the request-service Service spreads calls over its replica pods — `{'request-service-59b67b7445-bgddv': 15, 'request-service-59b67b7445-99xwp': 25}`
 
-#### [PASS] `test_k8s_runs_on_a_local_cluster` (0.7s) - covers 9.2.local
+#### [PASS] `test_k8s_runs_on_a_local_cluster` (1.6s) - covers 9.2.local
 
 §9.2 'The Kubernetes deployment may be performed locally using Minikube, kind, or Docker Desktop Kubernetes.'
 
 - ✔ the cluster is a local Minikube cluster — `context minikube, node minikube, Kubernetes v1.37.0`
-- ✔ everything runs in namespace 'erms' — `14 pods (12 application + Prometheus + Grafana)`
+- ✔ everything runs in namespace 'erms' — `16 pods (12 application + Prometheus + Grafana + 2 web UI)`
 
-#### [PASS] `test_storage_node_failure_before_during_after` (21.6s) - covers 8.detect, 8.avoid, 8.replica, 8.continue, 8.sync, 8.demo, 10.fail, 10.recover, 11.g, 11.h, 11.cond, 1.d
+#### [PASS] `test_storage_node_failure_before_during_after` (22.4s) - covers 8.detect, 8.avoid, 8.replica, 8.continue, 8.sync, 8.demo, 10.fail, 10.recover, 11.g, 11.h, 11.cond, 1.d
 
 §8 'A storage-node failure should be demonstrated by stopping the corresponding container or Kubernetes pod and subsequently restarting it ... before, during, and after the failure': detect the failed node, avoid routing to it, use the replica, continue processing, synchronize the data when it recovers.
 
@@ -784,103 +810,103 @@
 - ✔ before: a request on shard 1 is written to both copies — `['storage-shard-1-0', 'storage-shard-1-1']`
 - ✔ before: it is readable — `served_by storage-shard-1-0`
 - · STOP the storage node — `kubectl -n erms scale statefulset/storage-shard-1 --replicas=1   (stops pod storage-shard-1-1)`
-- ✔ during: the coordinator detected that storage-shard-1-1 is unavailable — `5.3s after the stop; reason: no heartbeat for 6.4s`
+- ✔ during: the coordinator detected that storage-shard-1-1 is unavailable — `6.0s after the stop; reason: no heartbeat for 6.1s`
 - ✔ during: shard 1 stays available through its replica storage-shard-1-0
 - ✔ during: data written before the failure is still readable - served by the replica — `200, served_by storage-shard-1-0`
 - ✔ during: a new request for shard 1 is accepted (201) and routed only to the live replica — `acked by ['storage-shard-1-0']`
-- ✔ during: the write is flagged degraded (1 of 2 copies), to be copied on recovery — `{'shard': 1, 'replicas': ['storage-shard-1-0'], 'version': 1795121746002531898, 'degraded': True}`
+- ✔ during: the write is flagged degraded (1 of 2 copies), to be copied on recovery — `{'shard': 1, 'replicas': ['storage-shard-1-0'], 'version': 1795174660019179443, 'degraded': True}`
 - ✔ during: matching keeps working on shard 1 (POST /match -> 200) — `Shard-1 water point`
 - ✔ during: status updates keep working (PUT /requests/{id}/status -> 200) — `in_progress`
-- ✔ during: the asynchronous pipeline (RabbitMQ -> matching -> storage) keeps processing — `req-41b1c52c72b4 matched by matching-service-65f774d4c6-fxrwc`
-- ✔ during: no read was sent to the failed node storage-shard-1-1 — `reads served by storage-shard-1-1: 18 before, 18 now`
+- ✔ during: the asynchronous pipeline (RabbitMQ -> matching -> storage) keeps processing — `req-ad5a054bf573 matched by matching-service-54879d4d65-4cc2b`
+- ✔ during: no read was sent to the failed node storage-shard-1-1 — `reads served by storage-shard-1-1: 0 before, 0 now`
 - ✔ during: listing all requests is still complete (no unavailable shard) — `unavailable_shards = []`
 - · RESTART the storage node — `kubectl -n erms scale statefulset/storage-shard-1 --replicas=2   (restarts pod storage-shard-1-1)`
 - ✔ after: storage-shard-1-1 re-registered, synchronized from storage-shard-1-0 and is ready again — `8.1s after the restart command`
-- ✔ after: the request created during the failure is now also on storage-shard-1-1's disk — `version 1795121747809029184`
-- ✔ after: the updates made during the failure reached storage-shard-1-1 (request 'in_progress', resource capacity) — `request status in_progress, resource availability 27`
-- ✔ after: both copies of shard 1 hold the same number of records — `[1862, 1862]`
-- · storage-shard-1-1 log — `storage-storage-shard-1-1] INFO SYNC complete from http://10.244.0.108:8000: received 1868 records, applied 3 updates; now READY (1862 keys)`
+- ✔ after: the request created during the failure is now also on storage-shard-1-1's disk — `version 1795174663166542238`
+- ✔ after: the updates made during the failure reached storage-shard-1-1 (request 'in_progress', resource capacity) — `request status in_progress, resource availability 21`
+- ✔ after: both copies of shard 1 hold the same number of records — `[4016, 4016]`
+- · storage-shard-1-1 log — `[storage-storage-shard-1-1] INFO SYNC complete from http://10.244.0.38:8000: received 4024 records, applied 4 updates; now READY (4016 keys)`
 - ✔ after: new writes go to both copies again (not degraded) — `['storage-shard-1-0', 'storage-shard-1-1']`
 
-#### [PASS] `test_matching_service_down_503_and_queue_buffers` (45.4s) - covers 5.503, 11.e, 11.cond, 6.mq
+#### [PASS] `test_matching_service_down_503_and_queue_buffers` (48.1s) - covers 5.503, 11.e, 11.cond, 6.mq
 
 §5 'appropriate HTTP status codes for ... unavailable services' (503) and §11 RabbitMQ delivery: with the matching microservice stopped, /match answers 503 while new requests are still accepted and wait in RabbitMQ; after the restart they are delivered and processed.
 
 - · STOP the matching microservice — `./scripts/matching-replicas.sh 0   (0 pods; KEDA autoscaling paused)`
 - ✔ POST /match while the matching service is down -> 503 Service Unavailable (JSON) — `matching service unavailable: ConnectError('All connection attempts failed')`
-- ✔ the API stays available: new requests are still accepted (201) and queued — `['req-787c2a34a844', 'req-9db01f7e92c5', 'req-4a35175a4632']`
+- ✔ the API stays available: new requests are still accepted (201) and queued — `['req-eb23690e0d3b', 'req-43d0a1f053f4', 'req-57bb6487e504']`
 - ✔ RabbitMQ holds the messages while no consumer runs — `3 message(s) waiting in matching.requests`
 - ✔ nothing is matched while the matching service is down — `all 3 pending`
 - · RESTART the matching microservice — `./scripts/matching-replicas.sh auto   (automatic scaling on queue depth again)`
 - ✔ the matching consumers re-attach to the queue — `2 consumers for 2 matching pods`
-- ✔ the buffered messages are delivered and processed: all 3 requests matched — `['matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-vzxk4']`
+- ✔ the buffered messages are delivered and processed: all 3 requests matched — `['matching-service-54879d4d65-m4fqc', 'matching-service-54879d4d65-m4fqc', 'matching-service-54879d4d65-njxfw']`
 - ✔ POST /match works again (200) — `200`
 
-#### [PASS] `test_whole_shard_down_503_then_recovers` (15.7s) - covers 5.503, 8.detect, 11.cond
+#### [PASS] `test_whole_shard_down_503_then_recovers` (16.7s) - covers 5.503, 8.detect, 11.cond
 
 §5 'unavailable services' at the storage layer: with BOTH copies of a shard stopped, data on that shard answers 503 (not 500 / wrong data) while the other shards keep working; after the restart the data is back.
 
 - · STOP both copies of the shard — `kubectl -n erms scale statefulset/storage-shard-2 --replicas=0`
 - ✔ the coordinator reports shard 2 unavailable — `{'status': 'degraded', 'healthy_shards': [0, 1], 'nodes': 6}`
 - ✔ GET of a request on shard 2 -> 503 Service Unavailable — `no ready replica available for shard 2`
-- ✔ creating requests: ids that hash to shard 2 -> 503, the others are still stored (201) — `{201: 11, 503: 4}`
+- ✔ creating requests: ids that hash to shard 2 -> 503, the others are still stored (201) — `{503: 8, 201: 7}`
 - ✔ listing still answers 200 and names the unavailable shard — `[2]`
 - · RESTART both copies of the shard — `kubectl -n erms scale statefulset/storage-shard-2 --replicas=2`
 - ✔ after the restart the shard's data is back (persistent volumes) -> 200 — `200`
 
-#### [PASS] `test_k8s_scale_matching_service_with_continued_availability` (61.8s) - covers 9.2.e, 10.k8sscale, 11.j
+#### [PASS] `test_k8s_scale_matching_service_with_continued_availability` (60.7s) - covers 9.2.e, 10.k8sscale, 11.j
 
 §9.2 'Microservice scaling' / §10 'Increase the number of replicas of a microservice and demonstrate continued availability' - matching-service 2 -> 4 -> 2 while traffic keeps flowing.
 
-- · BEFORE — `2 matching pods: ['matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-vzxk4']`
+- · BEFORE — `2 matching pods: ['matching-service-54879d4d65-m4fqc', 'matching-service-54879d4d65-njxfw']`
 - · SCALE UP — `./scripts/matching-replicas.sh 4   (KEDA installed: pins the Deployment to 4 pods)`
-- ✔ 4 matching-service pods are Ready — `['matching-service-65f774d4c6-5qqr9', 'matching-service-65f774d4c6-qwdmd', 'matching-service-65f774d4c6-r7wzt', 'matching-service-65f774d4c6-vzxk4']`
+- ✔ 4 matching-service pods are Ready — `['matching-service-54879d4d65-fzkgz', 'matching-service-54879d4d65-m28qg', 'matching-service-54879d4d65-m4fqc', 'matching-service-54879d4d65-njxfw']`
 - ✔ RabbitMQ sees 4 competing consumers
-- ✔ continued availability during the scale-up: every create + health call succeeded — `20/20 succeeded (100%)`
-- ✔ the new pods take part: messages were processed by pods added by the scale-up — `{'matching-service-65f774d4c6-r7wzt': 5, 'matching-service-65f774d4c6-qwdmd': 5, 'matching-service-65f774d4c6-5qqr9': 5, 'matching-service-65f774d4c6-vzxk4': 5}`
+- ✔ continued availability during the scale-up: every create + health call succeeded — `21/21 succeeded (100%)`
+- ✔ the new pods take part: messages were processed by pods added by the scale-up — `{'matching-service-54879d4d65-m28qg': 5, 'matching-service-54879d4d65-njxfw': 5, 'matching-service-54879d4d65-fzkgz': 5, 'matching-service-54879d4d65-m4fqc': 5}`
 - · SCALE DOWN — `./scripts/matching-replicas.sh 2`
-- ✔ continued availability during the scale-down — `64/64 succeeded (100%)`
-- ✔ no request was lost while pods were added and removed: all 104 matched
-- ✔ capacity is exact afterwards: one unit per matched request — `availability 396 = 500 - 104`
+- ✔ continued availability during the scale-down — `76/76 succeeded (100%)`
+- ✔ no request was lost while pods were added and removed: all 117 matched
+- ✔ capacity is exact afterwards: one unit per matched request — `availability 383 = 500 - 117`
 
 #### [PASS] `test_k8s_scale_request_service_with_continued_availability` (46.2s) - covers 9.2.e, 9.2.c, 10.k8sscale, 11.j
 
 §9.2 'Microservice scaling' for the client-facing microservice: request-service 2 -> 3 -> 2 under traffic.
 
 - · SCALE UP — `kubectl -n erms scale deploy/request-service --replicas=3`
-- ✔ 3 request-service pods are Ready — `['request-service-b5547c6c6-7qc8k', 'request-service-b5547c6c6-jrkvc', 'request-service-b5547c6c6-z7qp7']`
-- ✔ continued availability during the scale-up (create + read) — `19/19 succeeded (100%)`
-- ✔ the Service sends traffic to all 3 pods — `{'request-service-b5547c6c6-7qc8k': 17, 'request-service-b5547c6c6-z7qp7': 20, 'request-service-b5547c6c6-jrkvc': 23}`
+- ✔ 3 request-service pods are Ready — `['request-service-59b67b7445-99xwp', 'request-service-59b67b7445-bgddv', 'request-service-59b67b7445-v2hrv']`
+- ✔ continued availability during the scale-up (create + read) — `24/24 succeeded (100%)`
+- ✔ the Service sends traffic to all 3 pods — `{'request-service-59b67b7445-v2hrv': 22, 'request-service-59b67b7445-bgddv': 21, 'request-service-59b67b7445-99xwp': 17}`
 - · SCALE DOWN — `kubectl -n erms scale deploy/request-service --replicas=2`
-- ✔ continued availability during the scale-down — `70/70 succeeded (100%)`
+- ✔ continued availability during the scale-down — `75/75 succeeded (100%)`
 
-#### [PASS] `test_k8s_pod_failure_and_automatic_recovery` (29.7s) - covers 9.2.f, 10.k8srecover, 11.i
+#### [PASS] `test_k8s_pod_failure_and_automatic_recovery` (32.4s) - covers 9.2.f, 10.k8srecover, 11.i
 
 §9.2 'Pod failure and automatic recovery' / §10 'Terminate a running application pod and demonstrate automatic recovery': a request-service pod, a matching-service pod in the middle of work, and the coordinator pod.
 
-- · DELETE pod — `kubectl -n erms delete pod request-service-b5547c6c6-7qc8k`
-- ✔ the Deployment replaced the deleted request-service pod automatically — `['request-service-b5547c6c6-gbn8n'] Ready 4s later`
-- ✔ the API kept answering while the pod was replaced — `28/28 succeeded (100%)`
-- · DELETE pod while it is processing messages — `kubectl -n erms delete pod matching-service-65f774d4c6-r7wzt`
-- ✔ the Deployment replaced the deleted matching-service pod — `['matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']`
-- ✔ no message was lost: all 8 requests queued around the pod kill were matched — `{'matching-service-65f774d4c6-r7wzt': 4, 'matching-service-65f774d4c6-vzxk4': 4}`
+- · DELETE pod — `kubectl -n erms delete pod request-service-59b67b7445-99xwp`
+- ✔ the Deployment replaced the deleted request-service pod automatically — `['request-service-59b67b7445-mblxk'] Ready 7s later`
+- ✔ the API kept answering while the pod was replaced — `26/26 succeeded (100%)`
+- · DELETE pod while it is processing messages — `kubectl -n erms delete pod matching-service-54879d4d65-m4fqc`
+- ✔ the Deployment replaced the deleted matching-service pod — `['matching-service-54879d4d65-mvsl8', 'matching-service-54879d4d65-njxfw']`
+- ✔ no message was lost: all 8 requests queued around the pod kill were matched — `{'matching-service-54879d4d65-m4fqc': 4, 'matching-service-54879d4d65-njxfw': 4}`
 - ✔ and none took two units — `availability 10 -> 2`
-- · DELETE pod — `kubectl -n erms delete pod coordinator-698bbbccb9-n7b4r`
-- ✔ the coordinator pod was recreated and all 6 storage nodes re-registered with it — `['coordinator-698bbbccb9-9cl8n']`
+- · DELETE pod — `kubectl -n erms delete pod coordinator-6769f6b9b8-m97bz`
+- ✔ the coordinator pod was recreated and all 6 storage nodes re-registered with it — `['coordinator-6769f6b9b8-nwpq8']`
 - ✔ data written before the coordinator restart is still served — `written before the coordinator pod is killed`
 
-#### [PASS] `test_k8s_storage_pod_killed_reads_fail_over_then_resync` (10.6s) - covers 8.replica, 8.sync, 9.2.f, 11.g, 11.h, 10.fail, 10.recover
+#### [PASS] `test_k8s_storage_pod_killed_reads_fail_over_then_resync` (10.9s) - covers 8.replica, 8.sync, 9.2.f, 11.g, 11.h, 10.fail, 10.recover
 
 §8 with a Kubernetes pod: delete the storage pod that serves the reads of a shard; reads keep working from the replica, the StatefulSet recreates the pod with the same name and volume, and it catches up.
 
 - ✔ before: reads of the shard are served by storage-shard-1-0
 - · DELETE pod — `kubectl -n erms delete pod storage-shard-1-0`
-- ✔ reads never failed while the pod was down and recreated — `25/25 succeeded (100%)`
-- ✔ reads failed over to the replica storage-shard-1-1 — `{'storage-shard-1-0': 16, 'storage-shard-1-1': 9}`
+- ✔ reads never failed while the pod was down and recreated — `28/28 succeeded (100%)`
+- ✔ reads failed over to the replica storage-shard-1-1 — `{'storage-shard-1-0': 18, 'storage-shard-1-1': 10}`
 - ✔ the StatefulSet recreated the pod with the same name and the same persistent volume — `storage-shard-1-0, PVC data-storage-shard-1-0`
-- ✔ the write made while storage-shard-1-0 was gone was synchronized to it — `version 1795121943613944264`
+- ✔ the write made while storage-shard-1-0 was gone was synchronized to it — `version 1795174868451057388`
 
-#### [PASS] `test_x39_monitoring_is_deployed` (0.9s) - covers X39.both
+#### [PASS] `test_x39_monitoring_is_deployed` (1.3s) - covers X39.both
 
 #39: Prometheus and Grafana run as part of this deployment (Compose services / Kubernetes Deployments).
 
@@ -891,47 +917,47 @@
 - ✔ Prometheus is ready — `http://192.168.49.2:30090/-/ready -> 200`
 - ✔ Grafana is healthy — `Grafana 13.2.5`
 
-#### [PASS] `test_x39_every_service_exposes_metrics` (4.4s) - covers X39.metrics
+#### [PASS] `test_x39_every_service_exposes_metrics` (5.9s) - covers X39.metrics
 
 #39: every ERMS service serves Prometheus metrics at /metrics.
 
 - ✔ request-service: GET /metrics -> 200 Prometheus text — `text/plain; version=1.0.0; charset=utf-8`
-- ✔    ... with erms_http_requests_total — `['erms_http_requests_total{method="GET",route="/health",service="request-service",status="200"} 17.0']`
-- ✔    ... with erms_requests_created_total — `['erms_requests_created_total{type="medicine"} 0.0']`
-- ✔    ... with erms_requests_published_total — `['erms_requests_published_total{result="ok",routing_key="request.created"} 8.0']`
+- ✔    ... with erms_http_requests_total — `['erms_http_requests_total{method="GET",route="/health",service="request-service",status="200"} 214.0']`
+- ✔    ... with erms_requests_created_total — `['erms_requests_created_total{type="transportation"} 0.0']`
+- ✔    ... with erms_requests_published_total — `['erms_requests_published_total{result="ok",routing_key="request.created"} 79.0']`
 - ✔    /metrics is not part of the documented client API — `hidden from /docs`
-- ✔ coordinator: /metrics with the live state of all 6 storage nodes — `['erms_storage_node_up{node="storage-shard-0-0",shard="0"} 1.0', 'erms_storage_node_up{node="storage-shard-1-0",shard="1"} 1.0']`
+- ✔ coordinator: /metrics with the live state of all 6 storage nodes — `['erms_storage_node_up{node="storage-shard-1-0",shard="1"} 1.0', 'erms_storage_node_up{node="storage-shard-0-0",shard="0"} 1.0']`
 - ✔    ... with erms_shard_ready_replicas — `['erms_shard_ready_replicas{shard="0"} 2.0']`
 - ✔    ... with erms_storage_failovers_total — `['erms_storage_failovers_total 1.0']`
-- ✔    ... with erms_storage_node_down_total — `['erms_storage_node_down_total{node="storage-shard-0-0",shard="0"} 0.0']`
+- ✔    ... with erms_storage_node_down_total — `['erms_storage_node_down_total{node="storage-shard-1-0",shard="1"} 1.0']`
 - ✔    ... with erms_storage_degraded_writes_total — `['erms_storage_degraded_writes_total{shard="0"} 0.0']`
 - ✔ matching-service: /metrics (called from inside the cluster) — `2 instance(s)`
-- ✔    ... with erms_matches_total — `['erms_matches_total{result="matched",via="queue"} 0.0']`
-- ✔    ... with erms_time_to_match_seconds_bucket — `['erms_time_to_match_seconds_bucket{le="0.5",via="queue"} 0.0']`
-- ✔    ... with erms_messages_consumed_total — `['erms_messages_consumed_total{routing_key="request.created"} 0.0']`
+- ✔    ... with erms_matches_total — `['erms_matches_total{result="matched",via="queue"} 54.0']`
+- ✔    ... with erms_time_to_match_seconds_bucket — `['erms_time_to_match_seconds_bucket{le="0.5",via="queue"} 2.0']`
+- ✔    ... with erms_messages_consumed_total — `['erms_messages_consumed_total{routing_key="request.created"} 54.0']`
 - ✔    ... with erms_reconciler_fixes_total — `['erms_reconciler_fixes_total{kind="orphan_claim"} 0.0']`
-- ✔ storage node storage-shard-0-0: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-0-0",shard="0"} 1912.0`
-- ✔ storage node storage-shard-0-1: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-0-1",shard="0"} 1912.0`
-- ✔ storage node storage-shard-1-0: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-1-0",shard="1"} 1944.0`
-- ✔ storage node storage-shard-1-1: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-1-1",shard="1"} 1944.0`
-- ✔ storage node storage-shard-2-0: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-2-0",shard="2"} 1963.0`
-- ✔ storage node storage-shard-2-1: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-2-1",shard="2"} 1963.0`
+- ✔ storage node storage-shard-0-0: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-0-0",shard="0"} 3963.0`
+- ✔ storage node storage-shard-0-1: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-0-1",shard="0"} 3963.0`
+- ✔ storage node storage-shard-1-0: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-1-0",shard="1"} 4098.0`
+- ✔ storage node storage-shard-1-1: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-1-1",shard="1"} 4098.0`
+- ✔ storage node storage-shard-2-0: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-2-0",shard="2"} 4011.0`
+- ✔ storage node storage-shard-2-1: /metrics with its own records and resync metrics — `erms_storage_local_keys{node="storage-shard-2-1",shard="2"} 4011.0`
 
-#### [PASS] `test_x39_prometheus_scrapes_every_component` (2.4s) - covers X39.scrape, X39.rabbit
+#### [PASS] `test_x39_prometheus_scrapes_every_component` (0.4s) - covers X39.scrape, X39.rabbit
 
 #39: Prometheus scrapes every component and every replica, including RabbitMQ's built-in plugin.
 
-- ✔ job 'coordinator': 1 target(s), all up — `['coordinator-698bbbccb9-9cl8n']`
+- ✔ job 'coordinator': 1 target(s), all up — `['coordinator-6769f6b9b8-nwpq8']`
 - ✔ job 'storage-node': 6 target(s), all up — `['storage-shard-0-0', 'storage-shard-0-1', 'storage-shard-1-0', 'storage-shard-1-1', 'storage-shard-2-0', 'storage-shard-2-1']`
-- ✔ job 'request-service': 2 target(s), all up — `['request-service-b5547c6c6-gbn8n', 'request-service-b5547c6c6-jrkvc']`
-- ✔ job 'matching-service': 2 target(s), all up — `['matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']`
+- ✔ job 'request-service': 2 target(s), all up — `['request-service-59b67b7445-bgddv', 'request-service-59b67b7445-mblxk']`
+- ✔ job 'matching-service': 2 target(s), all up — `['matching-service-54879d4d65-mvsl8', 'matching-service-54879d4d65-njxfw']`
 - ✔ job 'rabbitmq': 1 target(s), all up — `['rabbitmq']`
 - ✔ RabbitMQ plugin: depth of queue matching.requests is collected — `0 waiting`
 - ✔ RabbitMQ plugin: its consumer count is collected (= matching pods) — `2.0`
 - ✔ the retry queue matching.retry is collected too — `matching.retry`
 - ✔ ERMS metric families stored in Prometheus — `61 erms_* metric names`
 
-#### [PASS] `test_x39_grafana_is_provisioned_and_secured` (0.4s) - covers X39.grafana, X39.secure
+#### [PASS] `test_x39_grafana_is_provisioned_and_secured` (0.6s) - covers X39.grafana, X39.secure
 
 #39: Grafana comes up with the Prometheus datasource and the ERMS dashboard, viewable without login.
 
@@ -944,7 +970,7 @@
 - ✔ the admin login uses the generated password (from .env / Secret grafana-credentials) — `admin / 32-character random password`
 - ✔ the default admin/admin is rejected — `admin/admin -> 401`
 
-#### [PASS] `test_x39_dashboard_shows_everything_promised_with_data` (14.6s) - covers X39.panels, X39.nodata
+#### [PASS] `test_x39_dashboard_shows_everything_promised_with_data` (14.4s) - covers X39.panels, X39.nodata
 
 #39: the dashboard has a panel for each promised view (queue depth, time to match, failovers, shard health, node up/down, resync duration, matching pods, API) and every panel query returns data, through Grafana.
 
@@ -959,49 +985,49 @@
 - · dashboard size — `21 panels in 4 sections, refresh 5 s`
 - ✔ all 33 panel queries return data when run through Grafana — `33/33 with data`
 
-#### [PASS] `test_x39_metrics_follow_real_traffic` (10.0s) - covers X39.traffic
+#### [PASS] `test_x39_metrics_follow_real_traffic` (10.1s) - covers X39.traffic
 
 #39: creating and matching requests moves the counters by exactly that much, and time-to-match is right.
 
-- ✔ created: +6 after 6 requests — `404 -> 410`
-- ✔ published: +6 after 6 requests — `222 -> 228`
-- ✔ POST /requests 201: +6 after 6 requests — `404 -> 410`
-- ✔ matched via queue: +6 after 6 requests — `51 -> 57`
-- ✔ time-to-match samples: +6 after 6 requests — `51 -> 57`
-- ✔ the recorded time-to-match equals the real one (created_at -> matched_at of the requests) — `metric average 2.14s, requests' own timestamps 2.12s`
+- ✔ created: +6 after 6 requests — `168 -> 174`
+- ✔ published: +6 after 6 requests — `82 -> 88`
+- ✔ POST /requests 201: +6 after 6 requests — `168 -> 174`
+- ✔ matched via queue: +6 after 6 requests — `57 -> 63`
+- ✔ time-to-match samples: +6 after 6 requests — `57 -> 63`
+- ✔ the recorded time-to-match equals the real one (created_at -> matched_at of the requests) — `metric average 2.10s, requests' own timestamps 2.08s`
 
-#### [PASS] `test_x39_storage_failure_is_visible_on_the_dashboard` (20.6s) - covers X39.failure
+#### [PASS] `test_x39_storage_failure_is_visible_on_the_dashboard` (19.6s) - covers X39.failure
 
 #39 demo moment: stop a storage node -> it turns DOWN (red) on the dashboard and failures are counted; restart it -> READY (green) again, with its resync and resync duration recorded.
 
 - ✔ before: storage-shard-1-1 shows READY (1, green) — `erms_storage_node_up{node="storage-shard-1-1"} = 1`
 - · STOP the storage node — `kubectl -n erms scale statefulset/storage-shard-1 --replicas=1   (stops pod storage-shard-1-1)`
-- ✔ during: the dashboard shows storage-shard-1-1 DOWN (0, red) — `10s after the stop`
+- ✔ during: the dashboard shows storage-shard-1-1 DOWN (0, red) — `7s after the stop`
 - ✔ during: 'Grafana -> Prometheus' returns the same (the panel's own query) — `erms_storage_node_up = 0`
 - ✔ during: 'Ready replicas per shard' drops to 1 for shard 1 — `1 of 2`
 - ✔ during: 'Healthy shards' stays 3 (the replica serves the shard) — `3`
 - ✔ during: a write with one copy is counted as a degraded write — `1 -> 2`
 - ✔ during: the node-down event is counted — `0 -> 1`
 - · RESTART the storage node — `kubectl -n erms scale statefulset/storage-shard-1 --replicas=2   (restarts pod storage-shard-1-1)`
-- ✔ after: the dashboard shows storage-shard-1-1 READY (1, green) again — `6s after the restart`
-- ✔ the node's timeline over the test shows the red stretch (min 0) and ends green (1) — `min over last 50s = 0, now = 1`
-- ✔ after: the restarted node's resync is recorded (count, records applied, duration on the dashboard) — `resyncs 1, missed writes applied 1, resync took 209 ms`
+- ✔ after: the dashboard shows storage-shard-1-1 READY (1, green) again — `8s after the restart`
+- ✔ the node's timeline over the test shows the red stretch (min 0) and ends green (1) — `min over last 49s = 0, now = 1`
+- ✔ after: the restarted node's resync is recorded (count, records applied, duration on the dashboard) — `resyncs 1, missed writes applied 1, resync took 333 ms`
 
-#### [PASS] `test_x39_killing_the_read_replica_makes_failovers_rise` (9.6s) - covers X39.failure
+#### [PASS] `test_x39_killing_the_read_replica_makes_failovers_rise` (7.7s) - covers X39.failure
 
 #39 demo moment, the 'failovers rise' part: kill the storage replica that SERVES a shard's reads while reads keep coming -> reads switch to the other replica, the failover counter on the dashboard rises, the node is counted down, and after its restart it is READY (green) again.
 
 - · BEFORE: reads of shard 1 are served by storage-shard-1-0
 - · KILL the read replica — `kubectl -n erms delete pod storage-shard-1-0`
 - · RESTART — `automatic: the StatefulSet recreates the pod with the same name and volume`
-- ✔ reads kept working: none failed while the replica was killed and came back — `19/19 succeeded (100%)`
-- ✔ reads switched to the other replica of the shard — `{'storage-shard-1-0': 10, 'storage-shard-1-1': 9}`
+- ✔ reads kept working: none failed while the replica was killed and came back — `15/15 succeeded (100%)`
+- ✔ reads switched to the other replica of the shard — `{'storage-shard-1-0': 12, 'storage-shard-1-1': 3}`
 - ✔ the dashboard's failover counter ROSE ('Read failovers' / 'Failures (per minute)' panels) — `erms_storage_failovers_total 1 -> 2`
 - ✔    ... the same value through Grafana's own panel query — `sum(erms_storage_failovers_total) = 2`
 - ✔ storage-shard-1-0 was counted DOWN (red on the node timeline) — `node-down events 1 -> 2`
 - ✔ after: storage-shard-1-0 is READY (green) again on the dashboard — `erms_storage_node_up{node="storage-shard-1-0"} = 1`
 
-#### [PASS] `test_x18_keda_is_installed` (0.8s) - covers X18.install
+#### [PASS] `test_x18_keda_is_installed` (1.1s) - covers X18.install
 
 #18: KEDA's components run in the cluster and serve the external-metrics API used by the HPA.
 
@@ -1012,14 +1038,14 @@
 - ✔ CRD triggerauthentications.keda.sh installed — `triggerauthentications.keda.sh`
 - ✔ the external metrics API (queue depth for the HPA) is Available — `True`
 
-#### [PASS] `test_x18_scaledobject_hpa_and_credentials` (1.1s) - covers X18.scaledobject, X18.hpa, X18.secret
+#### [PASS] `test_x18_scaledobject_hpa_and_credentials` (1.8s) - covers X18.scaledobject, X18.hpa, X18.secret
 
 #18: the ScaledObject, the HPA KEDA creates from it, and where KEDA's broker credentials come from.
 
 - ✔ ScaledObject targets Deployment matching-service
 - ✔ between 2 and 6 pods — `min 2, max 6`
 - ✔ trigger: RabbitMQ queue matching.requests, 5 waiting messages per pod — `{'mode': 'QueueLength', 'protocol': 'amqp', 'queueName': 'matching.requests', 'value': '5'}`
-- ✔ ScaledObject is Ready and not paused — `{'Ready': 'True', 'Active': 'False', 'Fallback': 'False', 'Paused': 'False', 'HPAActive': 'True'}`
+- ✔ ScaledObject is Ready and not paused — `{'Ready': 'True', 'Active': 'True', 'Fallback': 'False', 'Paused': 'False', 'HPAActive': 'True'}`
 - ✔ KEDA created HPA keda-hpa-matching-service (min 2, max 6) on an external queue metric — `s0-rabbitmq-matching-requests`
 - ✔ fast reaction: scale up immediately, scale down after 30 s (instead of the default 5 min) — `0 s / 30 s`
 - ✔ no second autoscaler fights over matching-service — `['keda-hpa-matching-service']`
@@ -1028,29 +1054,174 @@
 - ✔    the Secret exists (contents not printed) — `112 base64 characters`
 - ✔    no password / amqp URL in the manifest — `k8s/80-keda-autoscaling.yaml`
 
-#### [PASS] `test_x18_burst_scales_up_then_back_down` (126.6s) - covers X18.up, X18.down, X18.safe, X18.visible
+#### [PASS] `test_x18_burst_scales_up_then_back_down` (125.9s) - covers X18.up, X18.down, X18.safe, X18.visible
 
 #18 demo moment: 200 requests pile up in RabbitMQ -> KEDA scales matching-service 2 -> 6 by itself, the queue drains, and it scales back to 2; nothing is lost, nothing matched twice, the API stays up.
 
-- ✔ before: 2 matching pods, queue empty — `['matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']`
-- ✔ 200 requests accepted and queued — `in 1.6s`
-- ✔ RabbitMQ buffered the burst — `up to 188 messages waiting`
-- ✔ KEDA scaled matching-service UP by itself as the queue grew — `HPA asked for more pods 8s after the burst started`
-- ✔ ... up to the maximum of 6 pods — `6 Ready pods 12s after the burst`
-- · timeline (seconds, ready pods, desired) — `[(0, 2, 2), (8, 2, 6), (12, 6, 6), (61, 4, 4), (75, 2, 4), (78, 2, 2)]`
-- ✔ the extra pods did real work (requests matched by pods added by KEDA) — `{'matching-service-65f774d4c6-vzxk4': 39, 'matching-service-65f774d4c6-nx72v': 39, 'matching-service-65f774d4c6-488t8': 32, 'matching-service-65f774d4c6-jrkk9': 30, 'matching-service-65f774d4c6-kfmvs': 31, 'matching-service-65f774d4c6-68gzr': 29}`
-- ✔ all 200 requests matched through the queue — `queue drained and all matched 49s after the burst`
+- ✔ before: 2 matching pods, queue empty — `['matching-service-54879d4d65-mvsl8', 'matching-service-54879d4d65-njxfw']`
+- ✔ 200 requests accepted and queued — `in 1.7s`
+- ✔ RabbitMQ buffered the burst — `up to 192 messages waiting`
+- ✔ KEDA scaled matching-service UP by itself as the queue grew — `HPA asked for more pods 5s after the burst started`
+- ✔ ... up to the maximum of 6 pods — `6 Ready pods 10s after the burst`
+- · timeline (seconds, ready pods, desired) — `[(0, 2, 2), (5, 2, 6), (10, 6, 6), (64, 4, 4), (79, 4, 2), (84, 2, 2)]`
+- ✔ the extra pods did real work (requests matched by pods added by KEDA) — `{'matching-service-54879d4d65-njxfw': 39, 'matching-service-54879d4d65-mvsl8': 38, 'matching-service-54879d4d65-bnkpf': 32, 'matching-service-54879d4d65-55f96': 30, 'matching-service-54879d4d65-qvq7z': 31, 'matching-service-54879d4d65-gc9z2': 30}`
+- ✔ all 200 requests matched through the queue — `queue drained and all matched 40s after the burst`
 - ✔ no request lost or matched twice: capacity exact — `availability 210 -> 10`
-- ✔ KEDA scaled matching-service back DOWN to 2 after the queue drained — `2 pods again 106s after the burst (57s after the last match)`
-- ✔ the API stayed available the whole time — `176/176 succeeded (100%)`
+- ✔ KEDA scaled matching-service back DOWN to 2 after the queue drained — `2 pods again 109s after the burst (69s after the last match)`
+- ✔ the API stayed available the whole time — `193/193 succeeded (100%)`
 - ✔ Prometheus recorded the scale-out (dashboard panel 'Autoscaling: matching pods vs queue depth') — `peak matching pods seen by Prometheus: 6`
 - ✔ ... and the scale-in back to 2 — `count(up{job="matching-service"} == 1) = 2`
 
-#### [PASS] `test_x18_manual_pin_then_automatic_again` (167.2s) - covers X18.manual
+#### [PASS] `test_x18_manual_pin_then_automatic_again` (172.6s) - covers X18.manual
 
 #18: with KEDA in charge a plain `kubectl scale` is undone; scripts/matching-replicas.sh pins the replica count (paused-replicas) and hands it back to KEDA.
 
 - ✔ a plain `kubectl scale --replicas=5` is undone by KEDA's HPA (back to 2 with an empty queue) — `2 pods`
 - ✔ matching-replicas.sh 3 pins 3 pods (annotation autoscaling.keda.sh/paused-replicas=3) — `./scripts/matching-replicas.sh 3`
-- ✔ the pin holds even with an empty queue (45 s later still 3 pods) — `['matching-service-65f774d4c6-7qhzs', 'matching-service-65f774d4c6-nx72v', 'matching-service-65f774d4c6-vzxk4']`
+- ✔ the pin holds even with an empty queue (45 s later still 3 pods) — `['matching-service-54879d4d65-mvsl8', 'matching-service-54879d4d65-njxfw', 'matching-service-54879d4d65-x4lcp']`
 - ✔ matching-replicas.sh auto removes the pin: KEDA scales back to 2 and its HPA is active again — `./scripts/matching-replicas.sh auto`
+
+#### [PASS] `test_ui_is_served_on_this_deployment` (0.5s) - covers UI.serve, UI.both
+
+The web UI runs as its own container / pod and serves the app, its assets and its deployment settings.
+
+- ✔ Deployment 'frontend' is available — `2/2 pods`
+- ✔ Service 'frontend' is a NodePort on 30088 — `NodePort`
+- ✔ GET / -> 200 (text/html) — `text/html`
+- ✔ GET /app.js -> 200 (javascript) — `application/javascript`
+- ✔ GET /styles.css -> 200 (text/css) — `text/css`
+- ✔ GET /vendor/leaflet/leaflet.js -> 200 (javascript) — `application/javascript`
+- ✔ GET /healthz -> 200 (text/plain) — `text/plain`
+- ✔ /config.json tells the app which deployment it is on and where Grafana etc. are — `{'platform': 'k8s', 'grafanaPort': '30030', 'prometheusPort': '30090', 'rabbitPort': '30672', 'apiPort': '30080', 'coordinatorPort': '30081'}`
+
+#### [PASS] `test_ui_proxies_the_backend_with_the_right_restrictions` (17.3s) - covers UI.proxy
+
+The browser only talks to the UI's origin: /api, /coord (read-only), /prom (queries) are forwarded.
+
+- ✔ /api/... reaches the request-service — `{'status': 'ok', 'instance': 'request-service-59b67b7445-mblxk', 'broker_connected': True}`
+- ✔ /api/summary (dashboard counts) through the UI — `{'cancelled': 7736, 'matched': 2527, 'pending': 473, 'resolved': 51, 'unmatched': 178}`
+- ✔ /api/requests?order=desc&limit=3 returns the 3 newest — `3 of 10965`
+- ✔ /coord/cluster (read) is allowed — `200`
+- ✔ /coord PUT (a storage write) is blocked — `403`
+- ✔ /coord DELETE (a storage write) is blocked — `403`
+- ✔ /coord POST (a storage write) is blocked — `403`
+- ✔ /prom/api/v1/query works — `6`
+- ✔ /prom/api/v1/admin/tsdb/snapshot (Prometheus admin / config) is blocked — `403`
+- ✔ /prom/-/reload (Prometheus admin / config) is blocked — `403`
+- ✔ /prom/api/v1/status/config (Prometheus admin / config) is blocked — `403`
+- ✔ Grafana may be embedded in the UI (no X-Frame-Options) — `none`
+- ✔ after the API is restarted (new container / pods) the UI reaches it again — `kubectl rollout restart deploy/request-service: back 0s later`
+
+#### [PASS] `test_ui_every_tab_loads_without_errors` (43.8s) - covers UI.errors, UI.health
+
+Open every tab; no JavaScript error, no failed call; the header shows live health.
+
+- ✔ tab 'overview' renders — `overview`
+- ✔ tab 'requests' renders — `requests`
+- ✔ tab 'resources' renders — `resources`
+- ✔ tab 'map' renders — `map`
+- ✔ tab 'storage' renders — `storage`
+- ✔ tab 'messaging' renders — `messaging`
+- ✔ tab 'monitoring' renders — `monitoring`
+- ✔ no JavaScript errors or failed calls on any tab — `none`
+- ✔ header: API up — `API up`
+- ✔ header: RabbitMQ connected — `RabbitMQ connected`
+- ✔ header: all 3 shards healthy — `Shards 3/3`
+- ✔ header: all 6 storage nodes ready — `Nodes 6/6 ready`
+- ✔ header: matching pods counted (from Prometheus) — `Matching pods 2`
+
+#### [PASS] `test_ui_overview_matches_the_backend` (9.6s) - covers UI.overview
+
+The Overview numbers are the backend's numbers.
+
+- ✔ 8 key figures are shown — `['Requests', 'Waiting for help', 'Being helped', 'Resolved', 'Resources available', 'Storage nodes ready', 'Queue (waiting)', 'Matching pods']`
+- ✔ 'Requests' equals the backend total — `UI 10965, API 10965`
+- ✔ 'Storage nodes ready' shows 6/6 — `6/6`
+- ✔ requests by status: one bar per status (6) — `['pending', 'matched', 'in', 'resolved', 'cancelled', 'unmatched']`
+- ✔ latest requests table is filled — `8 rows`
+- ✔ the storage nodes are listed with their status — `6 ready`
+
+#### [PASS] `test_ui_register_and_update_a_resource` (16.2s) - covers UI.resources
+
+Register a resource in the form, then change its availability and status from its detail view.
+
+- ✔ registered from the form: detail view opens with the new id — `res-water-5a8724ea9eb2`
+- ✔ the backend has it as entered — `UI water tanker, ngo, 3 units, available`
+- ✔ availability changed in the UI -> backend has 5 units — `5`
+- ✔ 'Set offline' -> backend status offline — `offline`
+- ✔ 'Set available' -> backend status available — `available`
+- ✔ the list (type filter 'water') shows it, and only water resources — `{'water'}`
+- ✔ a 'volunteer' can be registered from the form — `res-food-fc37c3c3cbf6`
+- ✔ a 'other' can be registered from the form — `res-food-132621e4e34b`
+
+#### [PASS] `test_ui_request_lifecycle_and_match_now` (24.9s) - covers UI.requests, UI.match
+
+Create a request in the form, match it with 'Match now', move it through its statuses - all in the UI.
+
+- ✔ created from the form: the backend has type, location, details, priority — `req-4b52151bf054`
+- ✔ detail view: status pending, storage shard and serving node shown — `shard 1`
+- ✔ 'Match now' -> matched to the nearest water resource — `Matched to UI tanker (2.00 km)`
+- ✔ the assignment (resource, distance, matched by) is shown — `assignment section`
+- ✔ the resource lost one unit (2 -> 1) — `1`
+- ✔ 'Mark in progress' -> in_progress — `in_progress`
+- ✔ 'Mark resolved' -> resolved, unit released (1 -> 2) — `resolved`
+- ✔ a resolved request offers no more actions — `terminal`
+- ✔ history: pending -> matched -> in progress -> resolved — `['pending', 'matched', 'in progress', 'resolved']`
+- ✔ 'Re-open' a matched request -> pending, unit released — `req-72667d157f1e`
+- ✔ 'Cancel' -> cancelled — `cancelled`
+- ✔ 'Match now' without a suitable resource shows the API's 409 reason — `No match: no suitable available resource`
+- ✔ list filter status=resolved applies at once: only resolved requests (incl. ours) — `{'resolved'}`
+
+#### [PASS] `test_ui_request_matched_automatically_through_rabbitmq` (12.1s) - covers UI.async
+
+A request created with 'Match automatically' goes through RabbitMQ and shows up as matched by a worker.
+
+- ✔ the UI reports it stored and queued in RabbitMQ — `Request req-2e6e846bef16 created on shard 0 and queued in RabbitMQ`
+- ✔ matched through the queue consumer — `matching-service-54879d4d65-mvsl8`
+- ✔ its detail view says it was matched by the RabbitMQ consumer — `via queue`
+
+#### [PASS] `test_ui_map` (8.5s) - covers UI.map
+
+The map shows requests and resources; clicking the map pre-fills the forms with that location.
+
+- ✔ requests and resources are drawn on the map — `800 markers / lines`
+- ✔ clicking the map -> 'New request here' opens the form with that location — `latitude -79.99717`
+
+#### [PASS] `test_ui_storage_cluster_and_shard_lookup` (4.9s) - covers UI.storage
+
+Shards, nodes, records and the shard lookup of any record.
+
+- ✔ 3 shard cards, each healthy — `3 shards`
+- ✔ 6 storage nodes with records and heartbeat age — `4045 records · heartbeat 1.2s ago`
+- ✔ records per shard and the read / failover statistics are shown
+- ✔ lookup of a request id: the shard the coordinator chose and its replicas — `shard 0, replicas ['storage-shard-0-0', 'storage-shard-0-1']`
+- ✔ the failure-demo commands match this deployment — `kubectl -n erms scale sts/storage-shard-1 --replicas=1   # stop storage-shard-1-1`
+
+#### [PASS] `test_ui_shows_a_storage_failure_live` (18.9s) - covers UI.failure
+
+Stop a storage node: the UI shows it down (and 5/6 in the header); restart it: ready again.
+
+- ✔ before: storage-shard-1-1 shown ready — `ready`
+- · STOP — `kubectl -n erms scale statefulset/storage-shard-1 --replicas=1   (stops pod storage-shard-1-1)`
+- ✔ during: the UI shows storage-shard-1-1 DOWN — `4168 records · heartbeat 9.3s ago · no heartbeat for 6.4s`
+- ✔ during: the header shows Nodes 5/6 ready — `Nodes 5/6 ready`
+- · RESTART — `kubectl -n erms scale statefulset/storage-shard-1 --replicas=2   (restarts pod storage-shard-1-1)`
+- ✔ after: the UI shows storage-shard-1-1 ready again and Nodes 6/6 — `Nodes 6/6 ready`
+
+#### [PASS] `test_ui_messaging_charts_and_burst` (5.4s) - covers UI.messaging
+
+Queue / matching figures from Prometheus, 3 charts, and the burst generator sending requests.
+
+- ✔ 8 figures: queue depth, processing, retry, consumers, matching pods, matched, time to match p50 / p95 — `['Waiting in queue', 'Being processed', 'Delayed retry', 'Consumers', 'Matching pods', 'Matched (15 min)', 'Time to match p50', 'Time to match p95']`
+- ✔ 'Matching pods' equals the running matching instances — `2`
+- ✔ 3 charts drawn from Prometheus (queue vs pods, time to match, created vs matched) — `svg charts`
+- ✔ 'Send burst' sends 30 requests (and registers a resource for them) — `30/30 requests accepted in 0.4s and queued in RabbitMQ.`
+
+#### [PASS] `test_ui_monitoring_tab` (11.3s) - covers UI.monitoring
+
+Grafana dashboard embedded and live, links to the other tools, scrape-target health.
+
+- ✔ the Grafana 'ERMS overview' dashboard is embedded (kiosk mode) — `http://192.168.49.2:30030/d/erms-overview/erms-overview?orgId=1&kiosk&theme=light&refresh=5s&from=now-15m&to=now`
+- ✔ ... and it really renders inside the UI (panel 'Healthy shards' visible) — `Grafana panel text found`
+- ✔ links to Grafana, Prometheus, RabbitMQ UI, Swagger, coordinator with this deployment's ports — `['Open Grafana', 'Prometheus', 'RabbitMQ UI', 'API docs (Swagger)', 'Coordinator /cluster']`
+- ✔ Prometheus scrape targets listed, all up — `13/13 up`

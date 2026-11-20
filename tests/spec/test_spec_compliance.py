@@ -1191,13 +1191,17 @@ def test_dockerfiles_for_every_service(check):
         check(f"{pkg}/Dockerfile exists and builds the {name} service",
               "FROM " in text and f"COPY {pkg}" in text and f"{pkg}.app:app" in text,
               next((l for l in text.splitlines() if l.startswith("FROM")), "missing") + " ... CMD uvicorn " + f"{pkg}.app:app")
+    fe_text = open(os.path.join(ROOT, "frontend", "Dockerfile")).read()
+    check("frontend/Dockerfile exists and builds the web UI (nginx + the app)",
+          "FROM nginx" in fe_text and "COPY frontend/public" in fe_text,
+          next(line for line in fe_text.splitlines() if line.startswith("FROM")))
     cfg = json.loads(spec_env.sh(["docker", "compose", "config", "--format", "json"]))["services"]
     for svc, conf in sorted(cfg.items()):
         if "build" not in conf:
             check.note(f"{svc} uses an official image (no Dockerfile needed)", conf["image"])
             continue
         df = conf["build"].get("dockerfile")
-        pkg = next(p for p, n in SERVICES.items() if svc.startswith(n.split("-")[0]))
+        pkg = "frontend" if svc == "frontend" else next(p for p, n in SERVICES.items() if svc.startswith(n.split("-")[0]))
         check(f"docker-compose builds '{svc}' from its Dockerfile", df == f"{pkg}/Dockerfile", df)
 
 
@@ -1210,9 +1214,12 @@ def test_docker_images_are_built(check):
         check(f"image erms/{name}:latest is built", info is not None and f"{pkg}.app:app" in " ".join(info["Config"]["Cmd"]),
               f"created {info['Created'][:19]}, {info['Size'] / 1e6:.0f} MB, CMD {' '.join(info['Config']['Cmd'][:2])}"
               if info else "missing")
+    out = spec_env.sh(["docker", "image", "inspect", "erms/frontend:latest"], check=False)
+    check("image erms/frontend:latest is built", out.strip().startswith("[") and json.loads(out),
+          f"created {json.loads(out)[0]['Created'][:19]}" if out.strip().startswith("[") else "missing")
     if P.name == "k8s":
         listed = spec_env.sh(["minikube", "image", "ls"], timeout=120)
-        for name in SERVICES.values():
+        for name in [*SERVICES.values(), "frontend"]:
             check(f"erms/{name}:latest is loaded into the Kubernetes cluster", f"erms/{name}:latest" in listed, "minikube image ls")
 
 
@@ -1223,7 +1230,7 @@ def test_components_run_as_containers(check):
         rows = P.containers()
         by = Counter(r["Service"] for r in rows if r["State"] == "running")
         expect = {"rabbitmq": 1, "coordinator": 1, "request-service": 1, "matching-service": 2,
-                  **{f"storage-{s}{c}": 1 for s in range(3) for c in "ab"}, "prometheus": 1, "grafana": 1}
+                  **{f"storage-{s}{c}": 1 for s in range(3) for c in "ab"}, "prometheus": 1, "grafana": 1, "frontend": 1}
         for svc, n in expect.items():
             check(f"'{svc}' runs as {n} container(s)", by.get(svc, 0) >= n,
                   ", ".join(f"{r['Name']} ({r['Image']}, {r['Status']})" for r in rows if r["Service"] == svc))
@@ -1237,7 +1244,8 @@ def test_components_run_as_containers(check):
             check(f"pod {p['metadata']['name']} runs its container", p["status"]["phase"] == "Running" and cs.get("ready"),
                   f"{cs.get('image')}, restarts {cs.get('restartCount')}")
         apps = Counter(p["metadata"]["labels"].get("app") for p in pods)
-        expect = {"coordinator": 1, "request-service": 2, "rabbitmq": 1, "storage-node": 6, "prometheus": 1, "grafana": 1}
+        expect = {"coordinator": 1, "request-service": 2, "rabbitmq": 1, "storage-node": 6, "prometheus": 1, "grafana": 1,
+                  "frontend": 2}
         check("every component runs in its pods (matching-service: 2+ pods, autoscaled by KEDA)",
               all(apps.get(a, 0) == n for a, n in expect.items()) and apps.get("matching-service", 0) >= 2,
               dict(sorted(apps.items())))
@@ -1353,7 +1361,7 @@ def test_k8s_runs_on_a_local_cluster(check):
     check("the cluster is a local Minikube cluster", ctx == "minikube" and nodes[0]["metadata"]["name"] == "minikube",
           f"context {ctx}, node {nodes[0]['metadata']['name']}, Kubernetes {nodes[0]['status']['nodeInfo']['kubeletVersion']}")
     n = len(P.kjson("get", "pods")["items"])
-    check(f"everything runs in namespace '{spec_env.NS}'", n >= 14, f"{n} pods (12 application + Prometheus + Grafana)")
+    check(f"everything runs in namespace '{spec_env.NS}'", n >= 16, f"{n} pods (12 application + Prometheus + Grafana + 2 web UI)")
 
 
 # ============================================================================= §8 failure handling (disruptive)

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ERMS - Emergency Response Matching</title>
+  <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo" aria-hidden="true">+</span>
+    <div>
+      <div class="brand-name">Emergency Response Matching</div>
+      <div class="brand-sub">Distributed request / resource matching <span id="platform-badge" class="badge"></span></div>
+    </div>
+  </div>
+  <div class="health" id="health" aria-live="polite">
+    <span class="hpill" id="h-api" title="request-service">API</span>
+    <span class="hpill" id="h-broker" title="RabbitMQ connection of the API">RabbitMQ</span>
+    <span class="hpill" id="h-shards" title="shards with a ready replica">Shards</span>
+    <span class="hpill" id="h-nodes" title="storage nodes ready">Nodes</span>
+    <span class="hpill" id="h-matching" title="matching-service instances">Matching</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <a href="#overview" data-tab="overview">Overview</a>
+  <a href="#requests" data-tab="requests">Requests</a>
+  <a href="#resources" data-tab="resources">Resources</a>
+  <a href="#map" data-tab="map">Map</a>
+  <a href="#storage" data-tab="storage">Storage cluster</a>
+  <a href="#messaging" data-tab="messaging">Messaging &amp; autoscaling</a>
+  <a href="#monitoring" data-tab="monitoring">Monitoring</a>
+</nav>
+
+<main>
+  <!-- ============================================================ OVERVIEW -->
+  <section id="tab-overview" class="tab">
+    <div class="grid kpis" id="ov-kpis"></div>
+    <div class="grid two">
+      <div class="card">
+        <h2>Requests by status</h2>
+        <div id="ov-req-status" class="bars"></div>
+      </div>
+      <div class="card">
+        <h2>Resources</h2>
+        <div id="ov-res-status" class="bars"></div>
+      </div>
+    </div>
+    <div class="grid two">
+      <div class="card">
+        <h2>Latest requests <a class="small-link" href="#requests">all requests</a></h2>
+        <div id="ov-latest"></div>
+      </div>
+      <div class="card">
+        <h2>How a request is processed</h2>
+        <ol class="flow">
+          <li><b>Client</b> submits the request to the <b>request-service</b> (REST API).</li>
+          <li>It is stored in the <b>distributed storage</b>: the coordinator picks the shard with sha256(key) mod 3 and writes both replicas.</li>
+          <li>It is published to <b>RabbitMQ</b> (exchange <code>erms.requests</code> &rarr; queue <code>matching.requests</code>).</li>
+          <li>A <b>matching-service</b> worker consumes it and picks the nearest available resource of the same type (within 50 km).</li>
+          <li>The resource is assigned and both statuses are updated; without a match the request is retried later.</li>
+        </ol>
+        <div class="storage-mini" id="ov-storage"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ REQUESTS -->
+  <section id="tab-requests" class="tab">
+    <div class="grid side">
+      <form class="card" id="req-form" autocomplete="off">
+        <h2>New emergency request</h2>
+        <label>Type <select name="type" required></select></label>
+        <div class="row">
+          <label>Place <select class="preset"></select></label>
+        </div>
+        <div class="row">
+          <label>Latitude <input name="lat" type="number" step="any" min="-90" max="90" required></label>
+          <label>Longitude <input name="lon" type="number" step="any" min="-180" max="180" required></label>
+        </div>
+        <label>Area <input name="area" maxlength="100" placeholder="e.g. Ernakulam"></label>
+        <label>Details <textarea name="details" maxlength="2000" rows="3" placeholder="What is needed?"></textarea></label>
+        <div class="row">
+          <label>Priority
+            <select name="priority"><option>low</option><option selected>medium</option><option>high</option><option>critical</option></select>
+          </label>
+          <label>Requester <input name="requester" maxlength="100" placeholder="optional"></label>
+        </div>
+        <label class="check"><input type="checkbox" name="auto_match" checked> Match automatically (through RabbitMQ)</label>
+        <button type="submit" class="primary">Create request</button>
+        <p class="hint">Uncheck automatic matching to match it yourself with <b>Match now</b>.</p>
+      </form>
+
+      <div class="card">
+        <div class="list-head">
+          <h2>Requests</h2>
+          <div class="filters">
+            <select id="req-f-status"><option value="">all statuses</option></select>
+            <select id="req-f-type"><option value="">all types</option></select>
+            <select id="req-f-limit"><option>25</option><option selected>50</option><option>100</option><option>250</option></select>
+          </div>
+        </div>
+        <div class="muted" id="req-count"></div>
+        <div id="req-table"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ RESOURCES -->
+  <section id="tab-resources" class="tab">
+    <div class="grid side">
+      <form class="card" id="res-form" autocomplete="off">
+        <h2>Register resource / volunteer</h2>
+        <div class="row">
+          <label>Type <select name="type" required></select></label>
+          <label>Kind
+            <select name="kind"><option value="resource">resource</option><option value="volunteer">volunteer</option><option value="ngo">NGO</option><option value="other">other</option></select>
+          </label>
+        </div>
+        <label>Name <input name="name" maxlength="120" placeholder="e.g. Water tanker"></label>
+        <div class="row">
+          <label>Place <select class="preset"></select></label>
+        </div>
+        <div class="row">
+          <label>Latitude <input name="lat" type="number" step="any" min="-90" max="90" required></label>
+          <label>Longitude <input name="lon" type="number" step="any" min="-180" max="180" required></label>
+        </div>
+        <div class="row">
+          <label>Availability (units) <input name="availability" type="number" min="0" max="100000" value="5" required></label>
+          <label>Contact <input name="contact" maxlength="120" placeholder="optional"></label>
+        </div>
+        <button type="submit" class="primary">Register</button>
+      </form>
+
+      <div class="card">
+        <div class="list-head">
+          <h2>Resources</h2>
+          <div class="filters">
+            <select id="res-f-status"><option value="">all statuses</option></select>
+            <select id="res-f-type"><option value="">all types</option></select>
+            <select id="res-f-limit"><option>25</option><option selected>50</option><option>100</option><option>250</option></select>
+          </div>
+        </div>
+        <div class="muted" id="res-count"></div>
+        <div id="res-table"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ MAP -->
+  <section id="tab-map" class="tab">
+    <div class="card map-card">
+      <div class="list-head">
+        <h2>Requests and resources</h2>
+        <div class="legend">
+          <span><i class="dot st-pending"></i>pending</span><span><i class="dot st-matched"></i>matched</span>
+          <span><i class="dot st-in_progress"></i>in progress</span><span><i class="dot st-resolved"></i>resolved</span>
+          <span><i class="dot st-unmatched"></i>unmatched</span><span><i class="sq"></i>resource</span>
+          <span><i class="ln"></i>assignment</span>
+          <button type="button" id="map-fit">Show all points</button>
+        </div>
+      </div>
+      <div id="map"></div>
+      <p class="hint">Shows the newest 300 requests and up to 500 resources. Click anywhere on the map to create a request or register a resource at that spot.</p>
+    </div>
+  </section>
+
+  <!-- ============================================================ STORAGE -->
+  <section id="tab-storage" class="tab">
+    <div class="grid three" id="st-shards"></div>
+    <div class="grid two">
+      <div class="card">
+        <h2>Records per shard</h2>
+        <div id="st-dist" class="bars"></div>
+        <div id="st-stats" class="muted"></div>
+      </div>
+      <form class="card" id="st-lookup">
+        <h2>Where is a record stored?</h2>
+        <p class="hint">The client never chooses a shard: the coordinator computes <code>sha256(key) mod 3</code>.</p>
+        <div class="row">
+          <input name="id" placeholder="request or resource id, e.g. req-1a2b3c4d5e6f" required>
+          <button type="submit">Look up</button>
+        </div>
+        <div id="st-lookup-out"></div>
+      </form>
+    </div>
+    <div class="card">
+      <h2>Try a storage failure</h2>
+      <p class="hint">Run one of these in a terminal and watch this page: the node turns <b>down</b>, reads move to the replica,
+        writes are flagged degraded; after the restart the node <b>resyncs</b> and is <b>ready</b> again.</p>
+      <pre id="st-cmds"></pre>
+    </div>
+  </section>
+
+  <!-- ============================================================ MESSAGING -->
+  <section id="tab-messaging" class="tab">
+    <div class="grid kpis" id="mq-kpis"></div>
+    <div class="grid two">
+      <div class="card"><h2>Queue depth vs matching pods <span class="muted">(last 15 min)</span></h2><div id="ch-queue" class="chart"></div></div>
+      <div class="card"><h2>Time from request to match <span class="muted">(p50 / p95)</span></h2><div id="ch-ttm" class="chart"></div></div>
+    </div>
+    <div class="grid two">
+      <div class="card"><h2>Requests created vs matched <span class="muted">(per minute)</span></h2><div id="ch-rate" class="chart"></div></div>
+      <form class="card" id="load-form">
+        <h2>Send a burst of requests</h2>
+        <p class="hint" id="load-hint"></p>
+        <div class="row">
+          <label>Requests <input name="count" type="number" min="1" max="300" value="100" required></label>
+          <label>Type <select name="type"></select></label>
+        </div>
+        <div class="row">
+          <label>Place <select class="preset" name="preset"></select></label>
+        </div>
+        <label class="check"><input type="checkbox" name="with_resource" checked> Also register one resource there with enough capacity</label>
+        <button type="submit" class="primary">Send burst</button>
+        <div class="progress" hidden><div class="bar"></div></div>
+        <div id="load-out" class="muted"></div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ============================================================ MONITORING -->
+  <section id="tab-monitoring" class="tab">
+    <div class="card">
+      <div class="list-head">
+        <h2>Grafana: ERMS overview</h2>
+        <div class="links" id="mon-links"></div>
+      </div>
+      <iframe id="grafana" title="Grafana dashboard" loading="lazy"></iframe>
+    </div>
+    <div class="card">
+      <h2>Prometheus scrape targets</h2>
+      <div id="mon-targets"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="detail">
+  <div class="dlg-head">
+    <h2 id="detail-title"></h2>
+    <button type="button" class="ghost" id="detail-close" aria-label="Close">&times;</button>
+  </div>
+  <div id="detail-body"></div>
+</dialog>
+
+<div id="toasts" aria-live="polite"></div>
+
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

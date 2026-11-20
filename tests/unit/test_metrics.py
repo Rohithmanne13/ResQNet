@@ -1,5 +1,6 @@
 """Unit tests for the Prometheus instrumentation (extension #39), no Docker needed."""
 import asyncio
+import json
 
 import httpx
 from fastapi import FastAPI
@@ -136,7 +137,7 @@ def test_scan_that_switches_replica_counts_as_failover():
         return httpx.Response(200, json={"items": [{"key": "request:x", "value": {}, "version": 1}]})
     c.http = httpx.AsyncClient(transport=httpx.MockTransport(handler))
     before = sample("erms_storage_failovers_total")
-    result = asyncio.run(c.scan(prefix="request:"))
+    result = json.loads(asyncio.run(c.scan(prefix="request:")).body)
     assert [i["served_by"] for i in result["items"]] == ["live"]          # served by the replica
     assert c.nodes["dead"].status == c.DOWN                               # failed node detected
     assert sample("erms_storage_failovers_total") == before + 1

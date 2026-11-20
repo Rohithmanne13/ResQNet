@@ -3,6 +3,8 @@
 Services never know which shard/node holds a key: they only talk to the
 coordinator, which hashes the key and routes to the live replicas.
 """
+import asyncio
+import json
 import os
 from typing import Any
 
@@ -43,6 +45,8 @@ class StorageClient:
         except httpx.HTTPError as e:
             raise Unavailable(f"storage coordinator unreachable: {e!r}") from e
         if r.status_code < 400:
+            if len(r.content) > 256_000:      # big scans: parse off the event loop so the service stays responsive
+                return await asyncio.to_thread(json.loads, r.content)
             return r.json()
         try:
             payload = r.json()

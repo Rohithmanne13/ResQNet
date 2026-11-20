@@ -4,14 +4,14 @@ The minikube node IP (e.g. 192.168.49.2) lives on Docker's network inside WSL, w
 WSL does forward localhost ports to Windows. Forwarding to the NodePorts (not to single pods, as
 `kubectl port-forward` does) keeps working while the demo kills and recreates pods.
 
-  python3 scripts/expose.py            # then open http://localhost:30080/docs in the Windows browser
+  python3 scripts/expose.py            # then open http://localhost:30088 (web UI) in the Windows browser
   python3 scripts/expose.py 192.168.49.2 30080 30081 30672
 """
 import asyncio
 import subprocess
 import sys
 
-PORTS = [30080, 30081, 30672, 30030, 30090]   # API, coordinator, RabbitMQ UI, Grafana, Prometheus
+PORTS = [30088, 30080, 30081, 30672, 30030, 30090]   # web UI, API, coordinator, RabbitMQ UI, Grafana, Prometheus
 
 
 async def pipe(reader, writer):

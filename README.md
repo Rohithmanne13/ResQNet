@@ -30,19 +30,22 @@ over RabbitMQ, Docker and Kubernetes.
 | **storage nodes** (3 shards × 2 replicas) | Versioned key/value store on SQLite (persistent volume each). Heartbeat to the coordinator; resync from peers after (re)joining. |
 | **RabbitMQ** | Asynchronous hand-off between request processing and matching. Durable queues + persistent messages on a persistent volume; credentials from a Secret / `.env`. |
 | **Prometheus + Grafana** (extension) | Every service exposes `/metrics`; Prometheus scrapes them every 5 s (plus RabbitMQ's built-in plugin); Grafana shows the live "ERMS overview" dashboard. See [Monitoring](#monitoring-prometheus--grafana). |
+| **Web UI** (frontend) | Browser app for every feature: requests, resources, matching, map, storage cluster, messaging and autoscaling, embedded Grafana. nginx serves it and forwards `/api` (request-service), `/coord` (coordinator, read-only) and `/prom` (Prometheus queries). See [Web UI](#web-ui). |
 | **KEDA** (extension, Kubernetes) | Scales matching-service automatically (2–6 pods) on the number of messages waiting in RabbitMQ. See [Autoscaling](#autoscaling-on-queue-depth-keda). |
 
 ## Quick start (Docker Compose)
 
 ```bash
 ./scripts/init-env.sh                   # once: .env with random RabbitMQ / Grafana passwords (git-ignored)
-docker compose up -d --build            # 13 containers (11 application + Prometheus + Grafana)
+docker compose up -d --build            # 14 containers (11 application + Prometheus + Grafana + web UI)
+open http://localhost:8090              # the web UI
 open http://localhost:8080/docs         # Swagger UI of the client API
 ./scripts/demo.sh                       # guided walkthrough of every required demonstration (AUTO=1 = no pauses)
 ```
 
 | URL | |
 |---|---|
+| http://localhost:8090 | **web UI** (every feature in the browser) |
 | http://localhost:8080 | client API (request-service) — `/docs` for Swagger |
 | http://localhost:8001/cluster | coordinator: shards, nodes, status, key counts, read stats |
 | http://localhost:15672 | RabbitMQ management (user `erms`, password: `COMPOSE=1 ./scripts/rabbit-password.sh`) |
@@ -61,7 +64,7 @@ minikube start --driver=docker --cpus=4 --memory=4096
 python3 scripts/expose.py                                   # WSL2: open the NodePorts in the Windows browser as http://localhost:30080/docs etc.
 ```
 
-On minikube the services are exposed as NodePorts on `$(minikube ip)`: API `:30080` (`/docs`), coordinator
+On minikube the services are exposed as NodePorts on `$(minikube ip)`: **web UI `:30088`**, API `:30080` (`/docs`), coordinator
 `:30081/cluster`, RabbitMQ UI `:30672` (user `erms`, password: `./scripts/rabbit-password.sh`), Grafana `:30030`
 (no login to view; admin password: `./scripts/grafana-password.sh`), Prometheus `:30090`. NodePorts keep working while pods are killed and replaced; `kubectl port-forward`
 does not (it binds to one pod). On kind / Docker Desktop use `kubectl -n erms port-forward svc/request-service 8080:8000` etc.
@@ -74,6 +77,7 @@ does not (it binds to one pod). On kind / Docker Desktop use `kubectl -n erms po
 | `k8s/40-matching-service.yaml` | Deployment (2 replicas; 2–6 when KEDA is installed) + Service |
 | `k8s/50-request-service.yaml` | Deployment (2 replicas) + NodePort Service (30080) |
 | `k8s/70-monitoring.yaml` | Prometheus (Deployment, ServiceAccount + read-only Role for pod discovery, NodePort 30090) and Grafana (Deployment, NodePort 30030); config from ConfigMaps built by `deploy.sh` out of `monitoring/` |
+| `k8s/90-frontend.yaml` | web UI: Deployment (2 replicas, nginx + the app) + NodePort Service (30088) |
 | `k8s/80-keda-autoscaling.yaml` | KEDA `ScaledObject` (matching-service on queue `matching.requests`, 2–6 pods) + `TriggerAuthentication` (broker URL from Secret `keda-rabbitmq`) |
 
 All application pods carry `prometheus.io/scrape` annotations, so Prometheus finds pods created by scaling or recovery
@@ -81,7 +85,9 @@ within seconds. `deploy.sh` installs KEDA v2.21.0 once (namespace `keda`); `SKIP
 without it (matching-service then stays at 2 pods). The former CPU-based HPA (`60-hpa-optional.yaml`) was removed: two
 autoscalers on one Deployment fight each other.
 
-All pods have readiness/liveness probes on `/health`. Storage pods take their identity from the downward
+All pods have readiness/liveness probes on `/health` (Kubernetes' kubelet calls them; a pod is restarted only after
+~60 s without an answer, so a busy pod is not mistaken for a dead one). Large scans are (de)serialized in worker
+threads, so `/health` and heartbeats keep answering in milliseconds even while MBs of data are scanned. Storage pods take their identity from the downward
 API (`NODE_ID` = pod name, `NODE_URL` = pod IP), so a recreated pod re-registers with its new IP.
 
 Useful commands for the demo:
@@ -95,10 +101,41 @@ kubectl -n erms delete pod storage-shard-0-0                     # also works: r
 kubectl -n erms delete pod -l app=coordinator                    # coordinator restart: replicas wait for each other, merge
 ```
 
+## Web UI
+
+A browser app for the whole system: http://localhost:8090 (Compose) or http://$(minikube ip):30088 (Kubernetes;
+from Windows run `python3 scripts/expose.py` and open http://localhost:30088). Plain HTML/CSS/JavaScript, no build
+step (`frontend/public`); nginx (`frontend/nginx/default.conf.template`) serves it and forwards its calls, so the
+browser talks to one origin and never needs a password:
+
+| Path | Goes to | Allowed |
+|---|---|---|
+| `/api/...` | request-service | the whole client API |
+| `/coord/...` | coordinator | GET only (cluster view, shard lookup); storage writes are blocked |
+| `/prom/...` | Prometheus | `query`, `query_range`, `targets` only |
+
+| Tab | What you can do / see |
+|---|---|
+| Overview | requests and resources by status, free capacity, storage nodes, queue depth, matching pods, latest requests |
+| Requests | create (type, location or city, details, priority, requester, automatic matching on/off); list with filters; detail with **Match now**, in progress / resolved / re-open / cancel, assignment, storage shard + serving node, history |
+| Resources | register a resource / volunteer / NGO / other; list with filters; detail with availability and available / offline |
+| Map | requests coloured by status, resources, assignment lines; click the map to create a request or resource there |
+| Storage cluster | 3 shards × 2 nodes with status, records and heartbeat, read / failover statistics; "where is this record stored" (sha256 mod 3); failure commands to try |
+| Messaging & autoscaling | queue depth, processing, retry, consumers, matching pods, time to match (from Prometheus) with 15-minute charts; **burst generator** to watch the queue and (on Kubernetes) KEDA scale |
+| Monitoring | the Grafana dashboard embedded live, links to Grafana / Prometheus / RabbitMQ / Swagger, scrape-target health |
+
+The header shows live health (API, RabbitMQ, shards, nodes, matching pods) on every tab. The UI adds two read
+endpoints to the API: `GET /summary` (counts by status / type / kind, free units) and `limit` + `order=desc` on
+`GET /requests` and `GET /resources` (the response also carries `total`). It is tested in a real headless browser
+(Playwright): `tests/spec/test_y_frontend.py`, requirements `UI.*`.
+
 ## Monitoring (Prometheus + Grafana)
 
 Extension #39. Runs in both deployments: Compose (Grafana http://localhost:3000, Prometheus :9090) and Kubernetes
 (NodePorts 30030 / 30090). Open Grafana and the **ERMS overview** dashboard is the home page; viewing needs no login.
+Grafana is kept lean for a small laptop cluster: it does not download its ~16 optional plugins at start
+(`GF_PLUGINS_PREINSTALL_DISABLED`; only the built-in Prometheus data source is used), and on Kubernetes `GOMEMLIMIT`
+keeps it near 400 MiB inside a 640 Mi limit.
 
 | Dashboard section | Panels |
 |---|---|
@@ -147,10 +184,11 @@ Docker Compose has no autoscaler; there the replica count is fixed (`deploy.repl
 |---|---|---|---|
 | POST | `/requests` | create request (`type`, `location{lat,lon,area?}`, `details`, `priority`, `auto_match`) | 201 |
 | GET | `/requests/{id}` | retrieve request (includes `_storage.shard` / `served_by`) | 200 |
-| GET | `/requests?status=&type=` | list requests | 200 |
+| GET | `/requests?status=&type=&order=asc\|desc&limit=N` | list requests (`total` = all matches, `count` = returned) | 200 |
 | PUT | `/requests/{id}/status` | update status (`{"status": "...", "note": "..."}`) | 200 |
 | POST | `/resources` | register resource/volunteer (`type`, `location`, `availability`, `name`, `kind`); id = `res-<type>-<hex>` | 201 |
-| GET | `/resources?type=&status=` | list resources | 200 |
+| GET | `/resources?type=&status=&order=asc\|desc&limit=N` | list resources | 200 |
+| GET | `/summary` | counts of requests / resources by status, type, kind; free units (for dashboards) | 200 |
 | GET | `/resources/{id}` | get resource | 200 |
 | PUT | `/resources/{id}/status` | update `status` and/or `availability` | 200 |
 | POST | `/match/{requestId}` | match now (idempotent: an already matched request returns `result: skipped`) | 200 |
@@ -182,8 +220,15 @@ Coordinator (used by the services) and storage nodes (used by the coordinator) e
 
 | Method | Endpoint | Purpose |
 |---|---|---|
-| POST | `/internal/nodes/register` | storage node registers (reports `max_version`); reply: `syncing` + peers to merge from, or `waiting` |
-| POST | `/internal/nodes/heartbeat` | every 2 s (0.3 s while waiting); reply may say `resync: true` + peers |
+| POST | `/internal/nodes/register` | storage node registers (reports `max_version`); reply: `syncing` + peers to merge from (+ a `sync_id`), or `waiting` |
+| POST | `/internal/nodes/heartbeat` | every 2 s (0.3 s while waiting); reports `synced` = id of the last sync it completed; reply may say `resync: true` + peers + `sync_id` |
+
+Every sync order carries a unique `sync_id`, and the coordinator only marks a node READY once the node reports that
+id as completed. If the reply carrying an order is lost (e.g. a heartbeat timed out), the order is re-sent on the next
+heartbeat: a node can neither get stuck WAITING forever nor serve reads without copying the writes it missed.
+
+| Method | Endpoint | Purpose |
+|---|---|---|
 | PUT | `/internal/data/{key}?if_version=N` | store/update; `if_version` = compare-and-set (0 = create only) |
 | GET | `/internal/data/{key}` | retrieve |
 | DELETE | `/internal/data/{key}` | delete (tombstone) |
@@ -347,7 +392,8 @@ coordinator/       coordinator service + Dockerfile
 storage_node/      storage node service + Dockerfile
 request_service/   client API + Dockerfile
 matching_service/  matcher + consumer + reconciler + Dockerfile
-k8s/               manifests + deploy.sh (incl. monitoring 70-, KEDA 80-)
+k8s/               manifests + deploy.sh (incl. monitoring 70-, KEDA 80-, web UI 90-)
+frontend/          web UI: public/ (index.html, app.js, styles.css, vendored Leaflet), nginx/ config, Dockerfile
 monitoring/        prometheus/ scrape configs (Compose, Kubernetes); grafana/ provisioning, dashboards, build_dashboard.py
 scripts/           demo.sh, k8s-demo.sh, keda-demo.sh, matching-replicas.sh, spec-test.sh, init-env.sh,
                    rabbit-password.sh, grafana-password.sh, expose.py

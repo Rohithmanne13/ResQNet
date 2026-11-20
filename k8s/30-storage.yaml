@@ -29,8 +29,8 @@ spec:
             - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
             - { name: DATA_DIR, value: /data }
           ports: [{ containerPort: 8000 }]
-          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6 }
           volumeMounts: [{ name: data, mountPath: /data }]
           resources:
             requests: { cpu: 50m, memory: 64Mi }
@@ -74,8 +74,8 @@ spec:
             - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
             - { name: DATA_DIR, value: /data }
           ports: [{ containerPort: 8000 }]
-          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6 }
           volumeMounts: [{ name: data, mountPath: /data }]
           resources:
             requests: { cpu: 50m, memory: 64Mi }
@@ -119,8 +119,8 @@ spec:
             - { name: COORDINATOR_URL, value: "http://coordinator:8000" }
             - { name: DATA_DIR, value: /data }
           ports: [{ containerPort: 8000 }]
-          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6 }
           volumeMounts: [{ name: data, mountPath: /data }]
           resources:
             requests: { cpu: 50m, memory: 64Mi }

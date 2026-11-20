@@ -7,6 +7,7 @@
 #   RabbitMQ UI:    http://localhost:15672  (user/password from .env)
 #   Grafana:        http://localhost:3000   (dashboard "ERMS overview"; viewing needs no login, admin password in .env)
 #   Prometheus:     http://localhost:9090
+#   Web UI:         http://localhost:8090   (every feature in the browser; uses the API, coordinator, Prometheus, Grafana)
 
 x-storage-node: &storage-node
   image: erms/storage-node:latest
@@ -123,6 +124,8 @@ services:
       GF_AUTH_ANONYMOUS_ENABLED: "true"          # the dashboard can be watched without logging in (read-only)
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/erms-overview.json
+      GF_SECURITY_ALLOW_EMBEDDING: "true"        # the web UI shows the dashboard in its Monitoring tab
+      GF_PLUGINS_PREINSTALL_DISABLED: "true"     # do not download ~16 unused plugins (~480 MB) at every start
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
@@ -131,6 +134,14 @@ services:
       - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports: ["3000:3000"]
     depends_on: [prometheus]
+    restart: unless-stopped
+
+  # ------------------------------------------------------------------ web UI
+  frontend:
+    image: erms/frontend:latest
+    build: { context: ., dockerfile: frontend/Dockerfile }
+    ports: ["8090:80"]
+    depends_on: [request-service, coordinator, prometheus]
     restart: unless-stopped
 
 volumes:

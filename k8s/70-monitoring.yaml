@@ -44,8 +44,10 @@ spec:
           args: ["--config.file=/etc/prometheus/prometheus.yml", "--storage.tsdb.path=/prometheus",
                  "--storage.tsdb.retention.time=2d", "--web.enable-lifecycle"]
           ports: [{ containerPort: 9090 }]
-          readinessProbe: { httpGet: { path: /-/ready, port: 9090 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /-/healthy, port: 9090 }, periodSeconds: 15 }
+          # generous timeouts: on a busy single-node cluster a 1 s probe timeout (the default) kills a healthy pod
+          startupProbe: { httpGet: { path: /-/ready, port: 9090 }, periodSeconds: 5, timeoutSeconds: 5, failureThreshold: 60 }
+          readinessProbe: { httpGet: { path: /-/ready, port: 9090 }, periodSeconds: 5, timeoutSeconds: 5 }
+          livenessProbe: { httpGet: { path: /-/healthy, port: 9090 }, periodSeconds: 15, timeoutSeconds: 5, failureThreshold: 6 }
           volumeMounts:
             - { name: config, mountPath: /etc/prometheus }
             - { name: data, mountPath: /prometheus }
@@ -84,19 +86,29 @@ spec:
             - { name: GF_AUTH_ANONYMOUS_ENABLED, value: "true" }
             - { name: GF_AUTH_ANONYMOUS_ORG_ROLE, value: Viewer }
             - { name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH, value: /var/lib/grafana/dashboards/erms-overview.json }
+            - { name: GF_SECURITY_ALLOW_EMBEDDING, value: "true" }    # shown inside the web UI (Monitoring tab)
+            # Grafana otherwise downloads ~16 extra plugins (Loki, MSSQL, Tempo, ...; ~480 MB, several running as
+            # separate processes) at every start; only the built-in Prometheus data source is used
+            - { name: GF_PLUGINS_PREINSTALL_DISABLED, value: "true" }
+            # Grafana is a Go program: make its garbage collector keep it near 400 MiB instead of growing until the
+            # container limit (where it stalled, failed its health checks and starved the rest of the small cluster)
+            - { name: GOMEMLIMIT, value: "400MiB" }
             - { name: GF_ANALYTICS_REPORTING_ENABLED, value: "false" }
             - { name: GF_ANALYTICS_CHECK_FOR_UPDATES, value: "false" }
             - { name: GF_NEWS_NEWS_FEED_ENABLED, value: "false" }
           ports: [{ containerPort: 3000 }]
-          readinessProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 15, failureThreshold: 5 }
+          # Grafana starts slowly (database migrations) and answers slowly under load: allow up to 5 min to start and
+          # 5 s per health check; it is only restarted after 90 s of failed checks (was: killed after 1 s timeouts)
+          startupProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 5, timeoutSeconds: 5, failureThreshold: 60 }
+          readinessProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 5, timeoutSeconds: 5 }
+          livenessProbe: { httpGet: { path: /api/health, port: 3000 }, periodSeconds: 15, timeoutSeconds: 5, failureThreshold: 6 }
           volumeMounts:
             - { name: datasources, mountPath: /etc/grafana/provisioning/datasources }
             - { name: dashboard-provider, mountPath: /etc/grafana/provisioning/dashboards }
             - { name: dashboards, mountPath: /var/lib/grafana/dashboards }
-          resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { memory: 512Mi }
+          resources:          # GOMEMLIMIT 400MiB keeps it well below this limit (measured: ~450 MB with 4 viewers)
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 640Mi }
       volumes:
         - { name: datasources, configMap: { name: grafana-datasources } }
         - { name: dashboard-provider, configMap: { name: grafana-dashboard-provider } }

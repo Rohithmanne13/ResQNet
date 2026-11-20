@@ -115,6 +115,7 @@ class Compose:
         self.prometheus = os.getenv("PROMETHEUS_URL", "http://localhost:9090")
         self.grafana = os.getenv("GRAFANA_URL", "http://localhost:3000")
         self.grafana_auth = ("admin", os.getenv("GRAFANA_PASS") or _dotenv("GRAFANA_ADMIN_PASSWORD") or "")
+        self.frontend = os.getenv("FRONTEND_URL", "http://localhost:8090")
 
     def describe(self) -> str:
         return f"API {self.api}  coordinator {self.coord}  RabbitMQ {self.rabbit}  Grafana {self.grafana}"
@@ -206,6 +207,7 @@ class K8s:
         self.prometheus = os.getenv("PROMETHEUS_URL", f"http://{ip}:30090")
         self.grafana = os.getenv("GRAFANA_URL", f"http://{ip}:30030")
         self.grafana_auth = ("admin", os.getenv("GRAFANA_PASS") or self._secret("admin-password", "grafana-credentials"))
+        self.frontend = os.getenv("FRONTEND_URL", f"http://{ip}:30088")
 
     def describe(self) -> str:
         return f"API {self.api}  coordinator {self.coord}  RabbitMQ {self.rabbit}  Grafana {self.grafana}  namespace {NS}"

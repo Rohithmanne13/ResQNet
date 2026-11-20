@@ -18,6 +18,7 @@
   because there is exactly one coordinator.
 """
 import asyncio
+import json
 import os
 import time
 from collections import defaultdict
@@ -26,7 +27,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from pydantic import BaseModel
 
 from prometheus_client import REGISTRY, Counter
@@ -59,6 +60,8 @@ class Node:
     down_since: float | None = None
     down_reason: str | None = None
     pending: dict | None = None   # instruction delivered with the next heartbeat reply
+    required_sync: int = 0        # id of the sync this node must complete before it may serve reads
+    instruction: dict | None = None   # that sync order, re-sent until the node confirms it (replies can be lost)
 
 
 nodes: dict[str, Node] = {}
@@ -143,13 +146,28 @@ def mark_down(node: Node, reason: str) -> None:
         node.down_reason = reason
 
 
+_last_sync_id = 0
+
+
+def order_sync(node: Node, peers: list[str]) -> dict:
+    """Tell a node to (re)sync from peers before it serves reads. Every order has a unique id; the node is only
+    accepted as READY once it reports that exact id as completed. If the reply carrying the order is lost (e.g. a
+    heartbeat timed out), the node keeps reporting an older id and the order is simply sent again - otherwise it
+    could stay WAITING forever, or report READY without ever copying the writes it missed."""
+    global _last_sync_id
+    _last_sync_id = max(time.time_ns(), _last_sync_id + 1)    # unique, also across coordinator restarts
+    node.status = SYNCING
+    node.required_sync = _last_sync_id
+    node.instruction = {"status": SYNCING, "resync": True, "peers": peers, "sync_id": _last_sync_id}
+    return node.instruction
+
+
 def admit(node: Node) -> dict:
     """Decide how a (re)joining node gets back into service. Returns the reply for the node."""
     node.down_since = node.down_reason = None
     peers = ready_peers(node.shard_id, node.node_id)
     if peers:
-        node.status = SYNCING
-        return {"status": SYNCING, "resync": True, "peers": peers}
+        return order_sync(node, peers)
     # No ready replica to copy from: this node may be stale. Wait for its siblings, then merge all.
     node.status = WAITING
     shard_wait_since.setdefault(node.shard_id, time.time())
@@ -173,8 +191,7 @@ def resolve_waiting(now: float | None = None) -> None:
             continue
         for n in waiting:
             peers = ready or [m.url for m in waiting if m is not n]
-            n.status = SYNCING
-            n.pending = {"status": SYNCING, "resync": True, "peers": peers}
+            n.pending = order_sync(n, peers)
         log.warning("SHARD %d BOOTSTRAP: %s merge from %s", shard, [n.node_id for n in waiting],
                     "ready replica(s)" if ready else f"each other ({len(waiting)} of {REPLICAS_PER_SHARD} back)")
         shard_wait_since.pop(shard, None)
@@ -214,6 +231,7 @@ class NodeInfo(BaseModel):
     status: str | None = None
     key_count: int = 0
     max_version: int = 0
+    synced: int = 0         # id of the last sync order the node completed
 
 
 @app.post("/internal/nodes/register")
@@ -259,6 +277,13 @@ def heartbeat(info: NodeInfo):
         return reply
     if node.status == WAITING:
         return {"status": WAITING, "resync": False, "peers": []}
+    if node.status == SYNCING and info.synced != node.required_sync:
+        if info.status == SYNCING:
+            return {"resync": False}      # still copying
+        # The node did not act on its sync order (the reply carrying it was lost): send it again.
+        log.warning("NODE %s has not done its sync order (reports %s, synced=%s): re-sending",
+                    node.node_id, info.status, info.synced)
+        return node.instruction
     if info.status in (READY, SYNCING):
         if node.status != info.status:
             log.info("NODE %s: %s -> %s", node.node_id, node.status.upper(), info.status.upper())
@@ -365,6 +390,9 @@ async def scan(prefix: str = ""):
     """Scatter-gather a prefix scan: one ready replica per shard."""
     items, unavailable = [], []
 
+    def tag(raw: bytes, shard: int, node_id: str) -> list:
+        return [{**it, "shard": shard, "served_by": node_id} for it in json.loads(raw)["items"]]
+
     async def scan_shard(shard: int):
         for i, node in enumerate(shard_nodes(shard, (READY,))):
             try:
@@ -372,7 +400,9 @@ async def scan(prefix: str = ""):
                 r.raise_for_status()
                 if i > 0:
                     stats["failovers"] += 1     # the scan had to switch to another replica of the shard
-                return [{**it, "shard": shard, "served_by": node.node_id} for it in r.json()["items"]]
+                # Large scans (MBs of JSON) are parsed in a worker thread, so the event loop keeps answering
+                # heartbeats and /health meanwhile (otherwise a busy coordinator looks dead to Kubernetes).
+                return await asyncio.to_thread(tag, r.content, shard, node.node_id)
             except httpx.HTTPError as e:
                 mark_down(node, f"scan failed: {e!r}")
         unavailable.append(shard)
@@ -380,7 +410,8 @@ async def scan(prefix: str = ""):
 
     for chunk in await asyncio.gather(*(scan_shard(s) for s in range(NUM_SHARDS))):
         items.extend(chunk)
-    return {"items": items, "unavailable_shards": sorted(unavailable)}
+    body = await asyncio.to_thread(json.dumps, {"items": items, "unavailable_shards": sorted(unavailable)})
+    return Response(body, media_type="application/json")
 
 
 # --------------------------------------------------------------------------- observability

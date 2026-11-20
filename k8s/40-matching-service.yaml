@@ -30,8 +30,8 @@ spec:
             - { name: RECONCILE_GRACE, value: "20" }
             - { name: SHUTDOWN_GRACE, value: "20" }
           ports: [{ containerPort: 8000 }]
-          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6 }
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { cpu: 500m, memory: 256Mi }

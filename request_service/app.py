@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from typing import Literal
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from prometheus_client import Counter
 from pydantic import BaseModel, Field, field_validator
@@ -218,13 +218,22 @@ async def create_request(body: CreateRequest):
     return {**rec, "queued": queued, "_storage": storage_meta(stored)}
 
 
+def _page(items: list[dict], order: str, limit: int | None) -> tuple[list[dict], int]:
+    """Sort by creation time (asc = oldest first, desc = newest first), then keep at most `limit` items."""
+    items.sort(key=lambda r: r["created_at"], reverse=(order == "desc"))
+    total = len(items)
+    return (items[:limit] if limit else items), total
+
+
 @app.get("/requests", responses=errors(e503="storage coordinator unreachable"))
-async def list_requests(status: str | None = None, type: str | None = None):
+async def list_requests(status: str | None = None, type: str | None = None,
+                        order: Literal["asc", "desc"] = "asc", limit: int | None = Query(None, ge=1, le=1000)):
+    """List requests (filters: status, type). `total` = all matches, `count` = returned (after `limit`)."""
     listing = await store.list("request:")
     items = [i["value"] | {"_shard": i["shard"]} for i in listing["items"]]
     items = [r for r in items if (status is None or r["status"] == status) and (type is None or r["type"] == type)]
-    items.sort(key=lambda r: r["created_at"])
-    return {"count": len(items), "items": items, "unavailable_shards": listing["unavailable_shards"]}
+    items, total = _page(items, order, limit)
+    return {"count": len(items), "total": total, "items": items, "unavailable_shards": listing["unavailable_shards"]}
 
 
 @app.get("/requests/{request_id}", responses=errors(e404="request:req-87f53d097d08 not found", e503=STORAGE_DOWN))
@@ -290,14 +299,38 @@ async def register_resource(body: RegisterResource):
 
 
 @app.get("/resources", responses=errors(e422="type must be one of [...]", e503="storage coordinator unreachable"))
-async def list_resources(type: str | None = None, status: str | None = None):
+async def list_resources(type: str | None = None, status: str | None = None,
+                         order: Literal["asc", "desc"] = "asc", limit: int | None = Query(None, ge=1, le=1000)):
+    """List resources (filters: type, status). `total` = all matches, `count` = returned (after `limit`)."""
     if type is not None and type not in REQUEST_TYPES:
         raise HTTPException(422, f"type must be one of {sorted(REQUEST_TYPES)}")
     listing = await store.list(resource_prefix(type))
     items = [i["value"] | {"_shard": i["shard"]} for i in listing["items"]]
     items = [r for r in items if (type is None or r["type"] == type) and (status is None or r["status"] == status)]
-    items.sort(key=lambda r: r["created_at"])
-    return {"count": len(items), "items": items, "unavailable_shards": listing["unavailable_shards"]}
+    items, total = _page(items, order, limit)
+    return {"count": len(items), "total": total, "items": items, "unavailable_shards": listing["unavailable_shards"]}
+
+
+@app.get("/summary", responses=errors(e503="storage coordinator unreachable"))
+async def summary():
+    """Counts for dashboards: requests and resources by status and type, and the free capacity."""
+    reqs = await store.list("request:")
+    ress = await store.list("resource:")
+
+    def counts(values: list[dict], key: str) -> dict[str, int]:
+        out: dict[str, int] = {}
+        for v in values:
+            out[v.get(key)] = out.get(v.get(key), 0) + 1
+        return dict(sorted(out.items()))
+    rq = [i["value"] for i in reqs["items"]]
+    rs = [i["value"] for i in ress["items"]]
+    return {
+        "requests": {"total": len(rq), "by_status": counts(rq, "status"), "by_type": counts(rq, "type")},
+        "resources": {"total": len(rs), "by_status": counts(rs, "status"), "by_type": counts(rs, "type"),
+                      "by_kind": counts(rs, "kind"),
+                      "free_units": sum(r.get("availability", 0) for r in rs if r.get("status") == "available")},
+        "unavailable_shards": sorted(set(reqs["unavailable_shards"]) | set(ress["unavailable_shards"])),
+    }
 
 
 @app.get("/resources/{resource_id}", responses=errors(e404="resource:res-water-747383d2ea49 not found", e503=STORAGE_DOWN))

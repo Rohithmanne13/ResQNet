@@ -16,6 +16,7 @@
  PART 9  Reports, stopping, cleaning up
  PART 10 Troubleshooting
  PART 11 Map: every PDF requirement / extension -> where to see it
+ PART 12 The web UI (everything above in the browser)
 
  RULE: run EITHER Docker Compose OR Kubernetes at a time (the laptop has 7 GB RAM).
        Compose -> Kubernetes:  docker compose stop  then  minikube start
@@ -40,9 +41,9 @@ $ ./scripts/init-env.sh                                     # .env with random R
  PART 1 - DOCKER COMPOSE: START THE SYSTEM                                        (PDF §2, §9.1)
 =====================================================================================================================
 
-$ docker compose up -d --build            # builds the 4 images (Dockerfiles) and starts 13 containers
+$ docker compose up -d --build            # builds the 5 images (Dockerfiles) and starts 14 containers
 $ docker compose ps                        # rabbitmq, coordinator, storage-0a..2b (6), request-service,
-                                           # matching-service x2, prometheus, grafana  -> all "running"
+                                           # matching-service x2, prometheus, grafana, frontend -> all "running"
 $ docker images | grep erms                # the 4 images built from the Dockerfiles
 $ ls */Dockerfile                          # coordinator/ matching_service/ request_service/ storage_node/
 
@@ -50,6 +51,7 @@ $ ls */Dockerfile                          # coordinator/ matching_service/ requ
 $ until curl -s localhost:8001/health | grep -q '"status":"ok"' && curl -s localhost:8080/health | grep -q '"broker_connected":true'; do sleep 2; done; echo READY
 
 # Browser (Windows works directly with localhost for Compose):
+#   http://localhost:8090          WEB UI - every feature in the browser (see PART 12)
 #   http://localhost:8080/docs     Swagger UI = the client API (try every endpoint with "Try it out")
 #   http://localhost:8001/cluster  coordinator: shards, storage nodes, status, record counts
 #   http://localhost:15672         RabbitMQ UI  (user erms, password: COMPOSE=1 ./scripts/rabbit-password.sh)
@@ -190,9 +192,9 @@ $ AUTO=1 ./scripts/demo.sh     # same, without pauses
 #        | 5 asynchronous processing (RabbitMQ) | 6 storage node failure | 7 node recovery & resync
 
 # Automated tests
-$ .venv/bin/python -m pytest -q tests/unit           # 34 unit tests, no deployment needed (~10 s)
+$ .venv/bin/python -m pytest -q tests/unit           # 40 unit tests, no deployment needed (~10 s)
 $ ./scripts/spec-test.sh compose                     # EVERY PDF requirement + extensions, prints a report of
-                                                     # every check (~3 min; 48 tests - the 12 Kubernetes-only tests
+                                                     # every check (~6 min; 60 tests - the 12 Kubernetes-only tests
                                                      # belong to the Kubernetes run in PART 8)
 $ ./scripts/spec-test.sh compose -k "x39"            # only the monitoring extension tests
 $ ./scripts/spec-test.sh compose -k "storage_node_failure"   # any single test by name
@@ -207,13 +209,14 @@ $ minikube start                            # first time ever: minikube start --
 $ ./k8s/deploy.sh                           # builds + loads images, installs KEDA (first time), creates Secrets,
                                             # applies k8s/*.yaml incl. Prometheus, Grafana, ScaledObject, waits
                                             # until all 3 shards are ready, prints URLs (~3-5 min)
-$ kubectl -n erms get pods                  # 14 pods Running: coordinator, rabbitmq-0, storage-shard-{0,1,2}-{0,1},
-                                            # request-service x2, matching-service x2, prometheus, grafana
+$ kubectl -n erms get pods                  # 16 pods Running: coordinator, rabbitmq-0, storage-shard-{0,1,2}-{0,1},
+                                            # request-service x2, matching-service x2, prometheus, grafana, frontend x2
 $ kubectl -n keda get pods                  # KEDA operator, metrics API server, admission webhooks
 
 # Windows browser: in a SECOND terminal keep this running (forwards the NodePorts to localhost):
 $ python3 scripts/expose.py
-#   http://localhost:30080/docs  API (Swagger)        http://localhost:30081/cluster  coordinator
+#   http://localhost:30088       WEB UI               http://localhost:30080/docs     API (Swagger)
+#   http://localhost:30081/cluster  coordinator
 #   http://localhost:30672       RabbitMQ UI          http://localhost:30030          Grafana
 #   http://localhost:30090       Prometheus
 #   (passwords: ./scripts/rabbit-password.sh   ./scripts/grafana-password.sh)
@@ -320,7 +323,7 @@ $ AUTO=1 ./scripts/k8s-demo.sh      # without pauses
 $ ./scripts/keda-demo.sh            # autoscaling (PART 7)
 
 # Automated tests
-$ ./scripts/spec-test.sh k8s                         # EVERY PDF requirement + both extensions (~12 min, 60 tests)
+$ ./scripts/spec-test.sh k8s                         # EVERY PDF requirement + both extensions (~20 min, 72 tests)
 $ ./scripts/spec-test.sh k8s -k "x39 or x18"         # only the extension tests (~6 min)
 $ IP=$(minikube ip); export API_URL=http://$IP:30080 COORD_URL=http://$IP:30081 RABBIT_URL=http://$IP:30672 RABBIT_USER=erms RABBIT_PASS=$(./scripts/rabbit-password.sh)
 $ .venv/bin/python -m pytest -v -s tests/k8s         # 6 Kubernetes tests: pod recovery, scaling, Secret, ... (~2 min)
@@ -379,3 +382,34 @@ $ kubectl delete namespace erms              # remove the whole ERMS deployment 
  PDF §12 design choices                                                                  -> README "Design decisions"
  EXT #39 metrics, Prometheus, Grafana dashboard, red/green, failovers, resync            -> PART 3, PART 8
  EXT #18 KEDA ScaledObject + HPA, 2 -> 6 -> 2 on queue depth, manual pin                 -> PART 7
+
+
+=====================================================================================================================
+ PART 12 - THE WEB UI (everything above in the browser)
+=====================================================================================================================
+ Open:  Docker Compose  http://localhost:8090
+        Kubernetes      http://localhost:30088   (keep  python3 scripts/expose.py  running)  or  http://$(minikube ip):30088
+ The header shows live health on every tab: API, RabbitMQ, shards, storage nodes, matching pods.
+
+ Tab                       Try this
+ ------------------------  -----------------------------------------------------------------------------------------
+ Overview                  counts by status, free capacity, storage nodes, queue depth, matching pods, latest requests
+ Resources                 register "Kochi NGO water tanker" (type water, Place Kochi, 3 units); open it: change units,
+                           set offline / available
+ Requests                  create a water request in Kochi with "Match automatically" OFF -> its detail opens ->
+                           Match now -> Mark in progress -> Mark resolved (history shows every step; the tanker's unit is
+                           released). With "Match automatically" ON it is matched through RabbitMQ by itself.
+                           Filters: status / type / how many.  Errors (e.g. no suitable resource) appear as red messages.
+ Map                       pins coloured by status, resources as white rings, dashed lines = assignments; click the map
+                           -> "New request here" / "New resource here"; "Show all points" zooms out to everything
+ Storage cluster           3 shards x 2 nodes, records, heartbeats, failovers; paste a request id into
+                           "Where is a record stored?" -> shard (sha256 mod 3) + replicas.
+                           Run the failure command shown there in a terminal: the node turns DOWN, then READY again.
+ Messaging & autoscaling   queue depth, consumers, matching pods, time to match + charts; "Send burst" (e.g. 100
+                           requests): watch the queue fill and drain - on Kubernetes the matching pods go 2 -> 6 -> 2
+ Monitoring                the Grafana dashboard live inside the page, links to Grafana / Prometheus / RabbitMQ / Swagger,
+                           Prometheus scrape targets (all "up")
+
+ Tests of the UI (real headless browser, part of the spec suite):
+$ ./scripts/spec-test.sh compose -k ui_       # 12 UI tests (Compose)
+$ ./scripts/spec-test.sh k8s -k ui_           # 12 UI tests (Kubernetes)

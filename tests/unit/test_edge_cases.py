@@ -273,7 +273,7 @@ def test_first_returning_replica_is_not_trusted_alone(coord):
     assert b["status"] == "syncing" and b["resync"] and b["peers"] == ["http://s0a:8000"]   # immediately
     a = hb(client, "s0a")
     assert a["resync"] and a["peers"] == ["http://s0b:8000"]
-    hb(client, "s0a", status="ready")
+    hb(client, "s0a", status="ready", synced=a["sync_id"])      # reports the completed sync order
     assert coord.nodes["s0a"].status == "ready"
 
 
@@ -283,7 +283,8 @@ def test_lone_replica_is_promoted_after_grace(coord):
     coord.resolve_waiting(now=time.time() + coord.BOOTSTRAP_GRACE - 1)
     assert coord.nodes["s1a"].status == "waiting"
     coord.resolve_waiting(now=time.time() + coord.BOOTSTRAP_GRACE + 1)
-    assert hb(client, "s1a", shard=1) == {"status": "syncing", "resync": True, "peers": []}
+    r = hb(client, "s1a", shard=1)
+    assert (r["status"], r["resync"], r["peers"]) == ("syncing", True, []) and r["sync_id"] > 0
 
 
 def test_replica_rejoining_a_healthy_shard_syncs_immediately(coord):
@@ -291,7 +292,8 @@ def test_replica_rejoining_a_healthy_shard_syncs_immediately(coord):
     reg(client, "s2a", shard=2)
     reg(client, "s2b", shard=2)
     coord.resolve_waiting()
-    hb(client, "s2a", shard=2), hb(client, "s2a", shard=2, status="ready")
+    order = hb(client, "s2a", shard=2)
+    hb(client, "s2a", shard=2, status="ready", synced=order["sync_id"])
     reply = reg(client, "s2c", shard=2)
     assert reply["status"] == "syncing" and reply["peers"] == ["http://s2a:8000"]
 
@@ -301,10 +303,64 @@ def test_down_replica_with_no_ready_peer_waits_instead_of_serving(coord):
     reg(client, "s0a"), reg(client, "s0b")
     coord.resolve_waiting()
     for n in ("s0a", "s0b"):
-        hb(client, n), hb(client, n, status="ready")
+        order = hb(client, n)
+        hb(client, n, status="ready", synced=order["sync_id"])
     coord.mark_down(coord.nodes["s0a"], "test")
     coord.mark_down(coord.nodes["s0b"], "test")
     assert hb(client, "s0a", status="ready")["status"] == "waiting"   # old code: READY with stale data
+
+
+def bring_up(client, coord, shard=0, names=("s0a", "s0b")):
+    """Register a shard's replicas and complete their bootstrap merge (both READY)."""
+    for n in names:
+        reg(client, n, shard=shard)
+    coord.resolve_waiting()
+    for n in names:
+        order = coord.nodes[n].instruction
+        hb(client, n, shard=shard)                                   # receives the (pending) order, if any
+        hb(client, n, shard=shard, status="ready", synced=order["sync_id"])
+        assert coord.nodes[n].status == "ready"
+
+
+def test_lost_sync_order_is_resent_instead_of_deadlocking(coord):
+    """Seen live: the heartbeat reply carrying a 'merge now' order timed out; the node stayed WAITING while the
+    coordinator believed it SYNCING - forever. The order must be sent again until the node confirms it."""
+    client = TestClient(coord.app)
+    reg(client, "s0a")                                               # waits for its sibling
+    reg(client, "s0b")                                               # both back -> s0a gets an order (pending)
+    lost = hb(client, "s0a")                                         # ... this reply is LOST
+    assert lost["resync"] and coord.nodes["s0a"].status == "syncing"
+    again = hb(client, "s0a", status="waiting")                      # node never saw it: still waiting
+    assert again["resync"] and again["sync_id"] == lost["sync_id"]  # -> same order re-sent (no deadlock)
+    hb(client, "s0a", status="ready", synced=again["sync_id"])
+    assert coord.nodes["s0a"].status == "ready"
+
+
+def test_node_is_never_ready_without_completing_its_sync(coord):
+    """A node marked down (it missed writes) whose resync order is lost keeps saying 'ready'. It must NOT be
+    trusted until it reports the sync it was ordered to do - otherwise it would serve stale data."""
+    client = TestClient(coord.app)
+    bring_up(client, coord)
+    old = coord.nodes["s0a"].required_sync
+    coord.mark_down(coord.nodes["s0a"], "write failed (node alive, missed a write)")
+    order = hb(client, "s0a", status="ready", synced=old)           # back -> resync order ... LOST
+    assert order["resync"] and order["sync_id"] != old
+    reply = hb(client, "s0a", status="ready", synced=old)           # still claims ready with the OLD sync
+    assert coord.nodes["s0a"].status == "syncing"                    # not trusted
+    assert reply["resync"] and reply["sync_id"] == order["sync_id"]  # order re-sent
+    assert coord.shard_nodes(0, ("ready",))[0].node_id == "s0b"     # reads only go to the fresh replica
+    hb(client, "s0a", status="ready", synced=order["sync_id"])
+    assert coord.nodes["s0a"].status == "ready"
+
+
+def test_node_busy_syncing_is_not_sent_the_order_again(coord):
+    client = TestClient(coord.app)
+    bring_up(client, coord)
+    coord.mark_down(coord.nodes["s0b"], "test")
+    order = hb(client, "s0b", status="ready", synced=1)
+    assert hb(client, "s0b", status="syncing", synced=1) == {"resync": False}   # still copying: just wait
+    hb(client, "s0b", status="ready", synced=order["sync_id"])
+    assert coord.nodes["s0b"].status == "ready"
 
 
 def test_versions_never_go_backwards_after_coordinator_restart(coord):

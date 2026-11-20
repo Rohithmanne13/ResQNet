@@ -34,6 +34,7 @@ SECTIONS = {
     "12": "§12 Left to your design",
     "X39": "EXTENSION #39 - Prometheus + Grafana monitoring",
     "X18": "EXTENSION #18 - KEDA autoscaling on RabbitMQ queue depth",
+    "UI": "EXTENSION - Web UI (frontend for every feature)",
 }
 
 CATALOG: list[Req] = [
@@ -196,6 +197,32 @@ CATALOG += [
         **_X),
     Req("X18.manual", "X18", "Manual scaling / stopping still works with KEDA (pin the replica count), then "
                              "automatic scaling resumes", **_X),
+]
+
+CATALOG += [
+    Req("UI.serve", "UI", "The web UI runs as its own container / pod (Compose :8090, Kubernetes NodePort 30088)", **_X),
+    Req("UI.proxy", "UI", "The UI reaches the API, the coordinator (read-only) and Prometheus through its own origin; "
+                          "storage writes and Prometheus admin paths are blocked; it survives backend restarts", **_X),
+    Req("UI.errors", "UI", "Every tab loads without JavaScript errors or failed calls", **_X),
+    Req("UI.health", "UI", "The header shows live health: API, RabbitMQ, shards, storage nodes, matching pods", **_X),
+    Req("UI.overview", "UI", "Overview: requests / resources by status, storage nodes, queue depth, matching pods, "
+                             "latest requests - matching the backend's numbers", **_X),
+    Req("UI.resources", "UI", "Resources: register (type, kind, location, availability), list + filters, detail, "
+                              "availability and status updates", **_X),
+    Req("UI.requests", "UI", "Requests: create (type, location, details, priority, auto-match), list + filters, detail "
+                             "with assignment, storage location and history", **_X),
+    Req("UI.match", "UI", "Match now and every status change (in progress, resolved, re-open, cancel) from the UI; "
+                          "errors such as 'no suitable resource' are shown", **_X),
+    Req("UI.async", "UI", "A request created with automatic matching is matched through RabbitMQ and shown so", **_X),
+    Req("UI.map", "UI", "Map: requests by status, resources, assignment lines; click to create at a location", **_X),
+    Req("UI.storage", "UI", "Storage cluster: shards, nodes, status, records, failovers; shard lookup of any record",
+        **_X),
+    Req("UI.failure", "UI", "A storage node failure shows live in the UI (node down, then ready again)", **_X),
+    Req("UI.messaging", "UI", "Messaging & autoscaling: queue depth, consumers, matching pods, time to match, charts; "
+                              "burst generator", **_X),
+    Req("UI.monitoring", "UI", "Monitoring: the Grafana dashboard embedded and live, links to Prometheus / RabbitMQ / "
+                               "Swagger, scrape-target health", **_X),
+    Req("UI.both", "UI", "The UI works on both deployments (Docker Compose and Kubernetes)", **_X),
 ]
 
 BY_ID = {r.id: r for r in CATALOG}

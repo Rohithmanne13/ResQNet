@@ -20,8 +20,8 @@ spec:
             - { name: RABBITMQ_URL, value: "amqp://$(RABBITMQ_USER):$(RABBITMQ_PASSWORD)@rabbitmq:5672/" }
             - { name: MATCHING_SERVICE_URL, value: "http://matching-service:8000" }
           ports: [{ containerPort: 8000 }]
-          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6 }
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { cpu: 500m, memory: 256Mi }

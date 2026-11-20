@@ -17,8 +17,9 @@ spec:
             - { name: REPLICAS_PER_SHARD, value: "2" }
             - { name: BOOTSTRAP_GRACE, value: "8" }
           ports: [{ containerPort: 8000 }]
-          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5 }
-          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, failureThreshold: 3 }
+          # a busy pod (e.g. a large scan) is slow, not dead: restart only after ~60s of no answer
+          readinessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 5, timeoutSeconds: 3 }
+          livenessProbe: { httpGet: { path: /health, port: 8000 }, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 6 }
           resources:
             requests: { cpu: 50m, memory: 64Mi }
 ---

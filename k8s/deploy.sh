@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 KEDA_VERSION=${KEDA_VERSION:-2.21.0}
 
-IMAGES=(coordinator:coordinator storage_node:storage-node request_service:request-service matching_service:matching-service)
+IMAGES=(coordinator:coordinator storage_node:storage-node request_service:request-service matching_service:matching-service frontend:frontend)
 for pair in "${IMAGES[@]}"; do
   dir=${pair%%:*}; name=${pair##*:}
   echo ">> building erms/$name"
@@ -84,10 +84,11 @@ for s in 0 1 2; do
 done
 
 kubectl apply -f k8s/10-rabbitmq.yaml -f k8s/20-coordinator.yaml -f k8s/30-storage.yaml \
-              -f k8s/40-matching-service.yaml -f k8s/50-request-service.yaml -f k8s/70-monitoring.yaml
+              -f k8s/40-matching-service.yaml -f k8s/50-request-service.yaml -f k8s/70-monitoring.yaml \
+              -f k8s/90-frontend.yaml
 if [ $keda = 1 ]; then kubectl apply -f k8s/80-keda-autoscaling.yaml; fi
 # Pods pick up rebuilt :latest images and changed ConfigMaps on redeploy (no-op restart on first deploy is harmless)
-kubectl -n erms rollout restart deployment/coordinator deployment/request-service deployment/matching-service statefulset/storage-shard-0 statefulset/storage-shard-1 statefulset/storage-shard-2 deployment/prometheus deployment/grafana >/dev/null
+kubectl -n erms rollout restart deployment/coordinator deployment/request-service deployment/matching-service statefulset/storage-shard-0 statefulset/storage-shard-1 statefulset/storage-shard-2 deployment/prometheus deployment/grafana deployment/frontend >/dev/null
 kubectl -n erms rollout status statefulset/rabbitmq --timeout=240s
 kubectl -n erms rollout status deployment/coordinator --timeout=120s
 for s in 0 1 2; do kubectl -n erms rollout status statefulset/storage-shard-$s --timeout=120s; done
@@ -95,6 +96,7 @@ kubectl -n erms rollout status deployment/matching-service --timeout=180s
 kubectl -n erms rollout status deployment/request-service --timeout=180s
 kubectl -n erms rollout status deployment/prometheus --timeout=180s
 kubectl -n erms rollout status deployment/grafana --timeout=180s
+kubectl -n erms rollout status deployment/frontend --timeout=180s
 # Pods can be Ready while a restarted shard is still re-syncing; only report success once the coordinator
 # says every shard has ready replicas (otherwise the first writes to that shard would get 503).
 echo ">> waiting until all 3 shards are ready"
@@ -107,6 +109,7 @@ IP=$(minikube ip 2>/dev/null || echo "<node-ip>")
 cat <<MSG
 
 Deployed. NodePorts:
+  Web UI:         http://$IP:30088  (every feature in the browser)
   API (Swagger):  http://$IP:30080/docs
   Coordinator:    http://$IP:30081/cluster
   RabbitMQ UI:    http://$IP:30672  (user: erms, password: ./scripts/rabbit-password.sh)

@@ -23,7 +23,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 import httpx
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Response
 from prometheus_client import Counter, Gauge, Histogram
 from pydantic import BaseModel
 
@@ -99,7 +99,8 @@ class Store:
 
 
 store = Store(os.path.join(DATA_DIR, f"{NODE_ID}.db"))
-state = {"status": "starting", "registered": False, "last_sync": None}
+state = {"status": "starting", "registered": False, "last_sync": None,
+         "synced": 0}   # id of the last sync order completed (reported to the coordinator, see order_sync there)
 
 # ----------------------------------------------------------------------------- Prometheus metrics
 _L = {"node": NODE_ID, "shard": str(SHARD_ID)}
@@ -123,10 +124,12 @@ _sync_task: asyncio.Task | None = None
 _wake = asyncio.Event()   # set when the status changes, to report it to the coordinator immediately
 
 
-async def sync_from(client: httpx.AsyncClient, peers: list[str]) -> None:
+async def sync_from(client: httpx.AsyncClient, peers: list[str], sync_id: int = 0) -> None:
     """Pull full snapshots (incl. tombstones) from the given peers and merge them by version.
-    No peers = the coordinator decided this node is the only copy: serve local data."""
+    No peers = the coordinator decided this node is the only copy: serve local data.
+    On success the order's sync_id is recorded, which is what lets the coordinator mark this node ready."""
     if not peers:
+        state["synced"] = sync_id
         state["status"] = "ready"
         SYNCS.labels(result="local", **_L).inc()
         LAST_SYNC.labels(**_L).set(0)
@@ -138,7 +141,7 @@ async def sync_from(client: httpx.AsyncClient, peers: list[str]) -> None:
         try:
             r = await client.get(f"{peer}/internal/snapshot", timeout=30)
             r.raise_for_status()
-            rows = r.json()["items"]
+            rows = (await asyncio.to_thread(json.loads, r.content))["items"]
             received += len(rows)
             applied += await asyncio.to_thread(store.merge, rows)
             ok.append(peer)
@@ -149,6 +152,7 @@ async def sync_from(client: httpx.AsyncClient, peers: list[str]) -> None:
         log.warning("sync failed from all peers; will re-register")
         state["registered"] = False
         return
+    state["synced"] = sync_id
     state["status"] = "ready"
     took = time.time() - t0
     state["last_sync"] = {"peers": ok, "received": received, "applied": applied,
@@ -163,12 +167,12 @@ async def sync_from(client: httpx.AsyncClient, peers: list[str]) -> None:
     _wake.set()
 
 
-def _start_sync(client: httpx.AsyncClient, peers: list[str]) -> None:
+def _start_sync(client: httpx.AsyncClient, peers: list[str], sync_id: int = 0) -> None:
     global _sync_task
     if _sync_task and not _sync_task.done():
-        return
+        return      # a sync is running; if the coordinator wants a newer one it re-sends the order afterwards
     state["status"] = "syncing" if peers else "ready"
-    _sync_task = asyncio.create_task(sync_from(client, peers))
+    _sync_task = asyncio.create_task(sync_from(client, peers, sync_id))
 
 
 def _follow(client: httpx.AsyncClient, body: dict) -> None:
@@ -179,7 +183,7 @@ def _follow(client: httpx.AsyncClient, body: dict) -> None:
         state["status"] = "waiting"
     elif body.get("resync"):
         log.warning("coordinator requested sync; peers=%s", body.get("peers"))
-        _start_sync(client, body.get("peers", []))
+        _start_sync(client, body.get("peers", []), body.get("sync_id", 0))
 
 
 async def lifecycle() -> None:
@@ -187,7 +191,7 @@ async def lifecycle() -> None:
     async with httpx.AsyncClient(timeout=5) as client:
         while True:
             info = {"node_id": NODE_ID, "shard_id": SHARD_ID, "url": NODE_URL, "status": state["status"],
-                    "key_count": store.count(), "max_version": store.max_version()}
+                    "key_count": store.count(), "max_version": store.max_version(), "synced": state["synced"]}
             try:
                 if not state["registered"]:
                     r = await client.post(f"{COORDINATOR_URL}/internal/nodes/register", json=info)
@@ -199,7 +203,7 @@ async def lifecycle() -> None:
                     if body.get("status") == "waiting":
                         _follow(client, body)
                     else:
-                        _start_sync(client, body.get("peers", []))
+                        _start_sync(client, body.get("peers", []), body.get("sync_id", 0))
                 else:
                     r = await client.post(f"{COORDINATOR_URL}/internal/nodes/heartbeat", json=info)
                     if r.status_code == 404:  # coordinator restarted and forgot us
@@ -263,10 +267,13 @@ def delete_data(key: str, version: int | None = Query(None)):
 
 @app.get("/internal/data")
 def scan(prefix: str = ""):
-    return {"items": store.scan(prefix), "node_id": NODE_ID}
+    # Serialized here, in FastAPI's worker thread: returning the dict would encode MBs on the event loop,
+    # blocking heartbeats and /health for seconds once the shard holds thousands of records.
+    return Response(json.dumps({"items": store.scan(prefix), "node_id": NODE_ID}), media_type="application/json")
 
 
 @app.get("/internal/snapshot")
 def snapshot():
     """Full dump including tombstones; used by recovering peers."""
-    return {"items": store.scan("", include_deleted=True), "node_id": NODE_ID}
+    body = {"items": store.scan("", include_deleted=True), "node_id": NODE_ID}
+    return Response(json.dumps(body), media_type="application/json")     # off the event loop, see scan()
